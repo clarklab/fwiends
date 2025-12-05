@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Friend Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .node {
+      cursor: grab;
+    }
+    .node:active {
+      cursor: grabbing;
+    }
+    .edge-label {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto px-4 py-8 max-w-6xl">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-bold text-gray-800">Friend Map</h1>
+      <button
+        id="exportBtn"
+        class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow transition-colors"
+      >
+        Export
+      </button>
+    </div>
+
+    <!-- Add Connection Form -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">Add Connection</h2>
+      <form id="connectionForm" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label for="name1" class="block text-sm font-medium text-gray-600 mb-1">Name 1</label>
+            <input
+              type="text"
+              id="name1"
+              list="peopleList1"
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
+              placeholder="Enter name..."
+              required
+            >
+            <datalist id="peopleList1"></datalist>
+          </div>
+          <div>
+            <label for="name2" class="block text-sm font-medium text-gray-600 mb-1">Name 2</label>
+            <input
+              type="text"
+              id="name2"
+              list="peopleList2"
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
+              placeholder="Enter name..."
+              required
+            >
+            <datalist id="peopleList2"></datalist>
+          </div>
+        </div>
+        <div>
+          <label for="howMet" class="block text-sm font-medium text-gray-600 mb-1">How they met</label>
+          <input
+            type="text"
+            id="howMet"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
+            placeholder="e.g., college roommates, work, high school..."
+            required
+          >
+        </div>
+        <div class="flex justify-end">
+          <button
+            type="submit"
+            class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg shadow transition-colors"
+          >
+            Add Connection
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Canvas Area -->
+    <div class="bg-white rounded-xl shadow-md p-4 overflow-hidden">
+      <svg id="canvas" class="w-full" style="min-height: 500px; height: 60vh;"></svg>
+    </div>
+
+    <!-- Empty State Message -->
+    <div id="emptyState" class="text-center py-12 text-gray-500 hidden">
+      <p class="text-lg">No connections yet.</p>
+      <p class="text-sm">Add your first connection above to start building your friend map!</p>
+    </div>
+  </div>
+
+  <script>
+    // ============================================
+    // Data Model & Storage
+    // ============================================
+    const STORAGE_KEY = 'friendMapData';
+
+    function getDefaultData() {
+      return {
+        people: [],
+        connections: [],
+        positions: {} // Store node positions for drag persistence
+      };
+    }
+
+    function loadData() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const data = JSON.parse(stored);
+          // Ensure positions object exists for older data
+          if (!data.positions) {
+            data.positions = {};
+          }
+          return data;
+        }
+      } catch (e) {
+        console.error('Error loading data:', e);
+      }
+      return getDefaultData();
+    }
+
+    function saveData(data) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.error('Error saving data:', e);
+      }
+    }
+
+    let appData = loadData();
+
+    // ============================================
+    // Utility Functions
+    // ============================================
+    function normalizeName(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return '';
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    }
+
+    function generateId(prefix) {
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    // ============================================
+    // Autocomplete
+    // ============================================
+    function updateAutocomplete() {
+      const datalist1 = document.getElementById('peopleList1');
+      const datalist2 = document.getElementById('peopleList2');
+
+      const options = appData.people.map(p => `<option value="${p}">`).join('');
+      datalist1.innerHTML = options;
+      datalist2.innerHTML = options;
+    }
+
+    // ============================================
+    // Form Handling
+    // ============================================
+    document.getElementById('connectionForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const name1Input = document.getElementById('name1');
+      const name2Input = document.getElementById('name2');
+      const howMetInput = document.getElementById('howMet');
+
+      const name1 = normalizeName(name1Input.value);
+      const name2 = normalizeName(name2Input.value);
+      const howMet = howMetInput.value.trim();
+
+      if (!name1 || !name2 || !howMet) {
+        alert('Please fill in all fields.');
+        return;
+      }
+
+      if (name1 === name2) {
+        alert('Please enter two different names.');
+        return;
+      }
+
+      // Check if connection already exists
+      const connectionExists = appData.connections.some(c =>
+        (c.from === name1 && c.to === name2) || (c.from === name2 && c.to === name1)
+      );
+
+      if (connectionExists) {
+        alert('A connection between these two people already exists.');
+        return;
+      }
+
+      // Add new people if they don't exist
+      if (!appData.people.includes(name1)) {
+        appData.people.push(name1);
+      }
+      if (!appData.people.includes(name2)) {
+        appData.people.push(name2);
+      }
+
+      // Add connection
+      appData.connections.push({
+        from: name1,
+        to: name2,
+        how: howMet
+      });
+
+      saveData(appData);
+      updateAutocomplete();
+      renderCanvas();
+
+      // Clear form
+      name1Input.value = '';
+      name2Input.value = '';
+      howMetInput.value = '';
+      name1Input.focus();
+    });
+
+    // ============================================
+    // Canvas Rendering (SVG with Circular Layout)
+    // ============================================
+    function renderCanvas() {
+      const svg = document.getElementById('canvas');
+      const emptyState = document.getElementById('emptyState');
+
+      if (appData.people.length === 0) {
+        svg.innerHTML = '';
+        svg.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      svg.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+
+      const rect = svg.getBoundingClientRect();
+      const width = rect.width || 800;
+      const height = rect.height || 500;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) * 0.35;
+
+      // Calculate node positions (use stored positions or calculate circular layout)
+      const nodePositions = {};
+      const nodeCount = appData.people.length;
+
+      appData.people.forEach((person, index) => {
+        if (appData.positions[person]) {
+          nodePositions[person] = appData.positions[person];
+        } else {
+          // Circular layout
+          const angle = (2 * Math.PI * index) / nodeCount - Math.PI / 2;
+          nodePositions[person] = {
+            x: centerX + radius * Math.cos(angle),
+            y: centerY + radius * Math.sin(angle)
+          };
+        }
+      });
+
+      // Build SVG content
+      let svgContent = '';
+
+      // Draw edges first (so nodes appear on top)
+      appData.connections.forEach((conn, index) => {
+        const from = nodePositions[conn.from];
+        const to = nodePositions[conn.to];
+
+        if (from && to) {
+          const midX = (from.x + to.x) / 2;
+          const midY = (from.y + to.y) / 2;
+
+          // Calculate offset for label background
+          const labelWidth = conn.how.length * 7 + 16;
+          const labelHeight = 20;
+
+          svgContent += `
+            <line
+              x1="${from.x}" y1="${from.y}"
+              x2="${to.x}" y2="${to.y}"
+              stroke="#94a3b8"
+              stroke-width="2"
+            />
+            <rect
+              x="${midX - labelWidth/2}"
+              y="${midY - labelHeight/2}"
+              width="${labelWidth}"
+              height="${labelHeight}"
+              fill="white"
+              rx="4"
+              stroke="#e2e8f0"
+              stroke-width="1"
+            />
+            <text
+              x="${midX}" y="${midY}"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              class="edge-label"
+              fill="#64748b"
+              font-size="12"
+            >${escapeHtml(conn.how)}</text>
+          `;
+        }
+      });
+
+      // Draw nodes
+      const nodeWidth = 120;
+      const nodeHeight = 40;
+
+      appData.people.forEach((person, index) => {
+        const pos = nodePositions[person];
+
+        svgContent += `
+          <g class="node" data-person="${escapeHtml(person)}" transform="translate(${pos.x}, ${pos.y})">
+            <rect
+              x="${-nodeWidth/2}" y="${-nodeHeight/2}"
+              width="${nodeWidth}" height="${nodeHeight}"
+              fill="#6366f1"
+              rx="8"
+              stroke="#4f46e5"
+              stroke-width="2"
+            />
+            <text
+              x="0" y="0"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              fill="white"
+              font-weight="500"
+              font-size="14"
+            >${escapeHtml(person)}</text>
+          </g>
+        `;
+      });
+
+      svg.innerHTML = svgContent;
+
+      // Add drag functionality
+      setupDragging(svg, nodePositions);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ============================================
+    // Drag Functionality
+    // ============================================
+    function setupDragging(svg, nodePositions) {
+      const nodes = svg.querySelectorAll('.node');
+
+      nodes.forEach(node => {
+        let isDragging = false;
+        let startX, startY, currentX, currentY;
+        const person = node.dataset.person;
+
+        node.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          const pos = nodePositions[person];
+          startX = e.clientX - pos.x;
+          startY = e.clientY - pos.y;
+          node.style.cursor = 'grabbing';
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging) return;
+
+          const rect = svg.getBoundingClientRect();
+          currentX = e.clientX - startX;
+          currentY = e.clientY - startY;
+
+          // Keep within bounds
+          const nodeWidth = 60;
+          const nodeHeight = 20;
+          currentX = Math.max(nodeWidth, Math.min(rect.width - nodeWidth, currentX));
+          currentY = Math.max(nodeHeight, Math.min(rect.height - nodeHeight, currentY));
+
+          nodePositions[person] = { x: currentX, y: currentY };
+          appData.positions[person] = { x: currentX, y: currentY };
+
+          // Re-render during drag
+          renderCanvas();
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            saveData(appData);
+          }
+        });
+      });
+    }
+
+    // ============================================
+    // Export to Obsidian JSON Canvas
+    // ============================================
+    document.getElementById('exportBtn').addEventListener('click', function() {
+      if (appData.people.length === 0) {
+        alert('No data to export. Add some connections first!');
+        return;
+      }
+
+      const svg = document.getElementById('canvas');
+      const rect = svg.getBoundingClientRect();
+      const width = rect.width || 800;
+      const height = rect.height || 500;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) * 0.35;
+
+      // Create node ID mapping
+      const nodeIds = {};
+      const nodes = appData.people.map((person, index) => {
+        const id = `node-${index + 1}`;
+        nodeIds[person] = id;
+
+        // Use stored position or calculate
+        let x, y;
+        if (appData.positions[person]) {
+          x = appData.positions[person].x;
+          y = appData.positions[person].y;
+        } else {
+          const angle = (2 * Math.PI * index) / appData.people.length - Math.PI / 2;
+          x = centerX + radius * Math.cos(angle);
+          y = centerY + radius * Math.sin(angle);
+        }
+
+        return {
+          id: id,
+          type: 'text',
+          text: person,
+          x: Math.round(x),
+          y: Math.round(y),
+          width: 150,
+          height: 60
+        };
+      });
+
+      const edges = appData.connections.map((conn, index) => ({
+        id: `edge-${index + 1}`,
+        fromNode: nodeIds[conn.from],
+        toNode: nodeIds[conn.to],
+        label: conn.how
+      }));
+
+      const canvasData = { nodes, edges };
+
+      // Download file
+      const blob = new Blob([JSON.stringify(canvasData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'friend-map.canvas';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // ============================================
+    // Initialize
+    // ============================================
+    function init() {
+      updateAutocomplete();
+      renderCanvas();
+
+      // Re-render on window resize
+      window.addEventListener('resize', () => {
+        // Only recalculate positions for nodes without stored positions
+        renderCanvas();
+      });
+    }
+
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
