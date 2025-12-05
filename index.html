@@ -12,8 +12,15 @@
     .node:active {
       cursor: grabbing;
     }
-    .edge-label {
-      pointer-events: none;
+    .edge-group {
+      cursor: pointer;
+    }
+    .edge-group:hover rect {
+      fill: #f1f5f9;
+      stroke: #6366f1;
+    }
+    .edge-group:hover text {
+      fill: #4f46e5;
     }
   </style>
 </head>
@@ -22,12 +29,20 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-3xl font-bold text-gray-800">Friend Map</h1>
-      <button
-        id="exportBtn"
-        class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow transition-colors"
-      >
-        Export
-      </button>
+      <div class="flex gap-2">
+        <label
+          class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg shadow transition-colors cursor-pointer"
+        >
+          Import
+          <input type="file" id="importInput" accept=".canvas,.json" class="hidden">
+        </label>
+        <button
+          id="exportBtn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow transition-colors"
+        >
+          Export
+        </button>
+      </div>
     </div>
 
     <!-- Add Connection Form -->
@@ -91,6 +106,44 @@
       <p class="text-lg">No connections yet.</p>
       <p class="text-sm">Add your first connection above to start building your friend map!</p>
     </div>
+
+    <!-- Edit Connection Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+      <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4">Edit Connection</h3>
+        <div class="mb-4">
+          <p id="editNames" class="text-gray-600 mb-2"></p>
+          <label for="editHow" class="block text-sm font-medium text-gray-600 mb-1">How they met</label>
+          <input
+            type="text"
+            id="editHow"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+          >
+        </div>
+        <div class="flex justify-between">
+          <button
+            id="deleteConnectionBtn"
+            class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+          >
+            Delete
+          </button>
+          <div class="flex gap-2">
+            <button
+              id="cancelEditBtn"
+              class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              id="saveEditBtn"
+              class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -101,9 +154,16 @@
 
     function getDefaultData() {
       return {
-        people: [],
-        connections: [],
-        positions: {} // Store node positions for drag persistence
+        people: ['Tom', 'Steph', 'Brandon'],
+        connections: [
+          { from: 'Tom', to: 'Steph', how: 'Met on a dating app' },
+          { from: 'Tom', to: 'Brandon', how: 'Through a job interview' }
+        ],
+        positions: {
+          'Tom': { x: 174, y: 134 },
+          'Steph': { x: 279, y: 317 },
+          'Brandon': { x: 68, y: 317 }
+        }
       };
     }
 
@@ -273,8 +333,8 @@
           const midY = (from.y + to.y) / 2;
 
           // Calculate offset for label background
-          const labelWidth = conn.how.length * 7 + 16;
-          const labelHeight = 20;
+          const labelWidth = Math.max(conn.how.length * 7 + 16, 60);
+          const labelHeight = 24;
 
           svgContent += `
             <line
@@ -283,24 +343,25 @@
               stroke="#94a3b8"
               stroke-width="2"
             />
-            <rect
-              x="${midX - labelWidth/2}"
-              y="${midY - labelHeight/2}"
-              width="${labelWidth}"
-              height="${labelHeight}"
-              fill="white"
-              rx="4"
-              stroke="#e2e8f0"
-              stroke-width="1"
-            />
-            <text
-              x="${midX}" y="${midY}"
-              text-anchor="middle"
-              dominant-baseline="middle"
-              class="edge-label"
-              fill="#64748b"
-              font-size="12"
-            >${escapeHtml(conn.how)}</text>
+            <g class="edge-group" data-index="${index}">
+              <rect
+                x="${midX - labelWidth/2}"
+                y="${midY - labelHeight/2}"
+                width="${labelWidth}"
+                height="${labelHeight}"
+                fill="white"
+                rx="4"
+                stroke="#e2e8f0"
+                stroke-width="1"
+              />
+              <text
+                x="${midX}" y="${midY}"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill="#64748b"
+                font-size="12"
+              >${escapeHtml(conn.how)}</text>
+            </g>
           `;
         }
       });
@@ -338,6 +399,9 @@
 
       // Add drag functionality
       setupDragging(svg, nodePositions);
+
+      // Add click handlers for edges
+      setupEdgeClicks(svg);
     }
 
     function escapeHtml(text) {
@@ -394,6 +458,161 @@
         });
       });
     }
+
+    // ============================================
+    // Edge Click Handlers (Edit Connections)
+    // ============================================
+    let editingIndex = -1;
+
+    function setupEdgeClicks(svg) {
+      const edges = svg.querySelectorAll('.edge-group');
+
+      edges.forEach(edge => {
+        edge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const index = parseInt(edge.dataset.index);
+          openEditModal(index);
+        });
+      });
+    }
+
+    function openEditModal(index) {
+      editingIndex = index;
+      const conn = appData.connections[index];
+
+      document.getElementById('editNames').textContent = `${conn.from} ↔ ${conn.to}`;
+      document.getElementById('editHow').value = conn.how;
+      document.getElementById('editModal').classList.remove('hidden');
+      document.getElementById('editHow').focus();
+    }
+
+    function closeEditModal() {
+      editingIndex = -1;
+      document.getElementById('editModal').classList.add('hidden');
+    }
+
+    // Edit modal event listeners
+    document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.id === 'editModal') {
+        closeEditModal();
+      }
+    });
+
+    document.getElementById('saveEditBtn').addEventListener('click', () => {
+      if (editingIndex < 0) return;
+
+      const newHow = document.getElementById('editHow').value.trim();
+      if (!newHow) {
+        alert('Please enter how they met.');
+        return;
+      }
+
+      appData.connections[editingIndex].how = newHow;
+      saveData(appData);
+      renderCanvas();
+      closeEditModal();
+    });
+
+    document.getElementById('deleteConnectionBtn').addEventListener('click', () => {
+      if (editingIndex < 0) return;
+
+      const conn = appData.connections[editingIndex];
+      if (!confirm(`Delete connection between ${conn.from} and ${conn.to}?`)) {
+        return;
+      }
+
+      // Remove connection
+      appData.connections.splice(editingIndex, 1);
+
+      // Remove orphaned people (those with no connections)
+      const connectedPeople = new Set();
+      appData.connections.forEach(c => {
+        connectedPeople.add(c.from);
+        connectedPeople.add(c.to);
+      });
+
+      appData.people = appData.people.filter(p => connectedPeople.has(p));
+
+      // Clean up positions for removed people
+      Object.keys(appData.positions).forEach(name => {
+        if (!connectedPeople.has(name)) {
+          delete appData.positions[name];
+        }
+      });
+
+      saveData(appData);
+      updateAutocomplete();
+      renderCanvas();
+      closeEditModal();
+    });
+
+    // Handle Enter key in edit modal
+    document.getElementById('editHow').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('saveEditBtn').click();
+      } else if (e.key === 'Escape') {
+        closeEditModal();
+      }
+    });
+
+    // ============================================
+    // Import from Obsidian JSON Canvas
+    // ============================================
+    document.getElementById('importInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          const canvasData = JSON.parse(event.target.result);
+
+          // Validate structure
+          if (!canvasData.nodes || !canvasData.edges) {
+            throw new Error('Invalid canvas file format');
+          }
+
+          // Build node ID to name mapping
+          const nodeNames = {};
+          canvasData.nodes.forEach(node => {
+            nodeNames[node.id] = node.text;
+          });
+
+          // Convert to app data format
+          const newData = {
+            people: canvasData.nodes.map(n => n.text),
+            connections: canvasData.edges.map(e => ({
+              from: nodeNames[e.fromNode],
+              to: nodeNames[e.toNode],
+              how: e.label || ''
+            })),
+            positions: {}
+          };
+
+          // Import positions
+          canvasData.nodes.forEach(node => {
+            newData.positions[node.text] = { x: node.x, y: node.y };
+          });
+
+          // Apply imported data
+          appData = newData;
+          saveData(appData);
+          updateAutocomplete();
+          renderCanvas();
+
+          alert('Import successful!');
+        } catch (err) {
+          alert('Error importing file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+
+      // Reset input so same file can be imported again
+      e.target.value = '';
+    });
 
     // ============================================
     // Export to Obsidian JSON Canvas
