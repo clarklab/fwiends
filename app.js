@@ -24,6 +24,8 @@ const ICONS = {
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   refresh:  '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
   chevron:  '<polyline points="9 18 15 12 9 6"/>',
+  chevdown: '<polyline points="6 9 12 15 18 9"/>',
+  check:    '<polyline points="20 6 9 17 4 12"/>',
   arrow:    '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
   heart:    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
   star:     '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>',
@@ -94,14 +96,18 @@ function parseWhen(d, y, approx) {
 }
 
 /* ── state ─────────────────────────────────────────────────── */
-const VIEWS = ['timeline', 'gantt', 'people', 'places', 'insights'];
-const VIEW_TITLE = { timeline: 'Fwiends', gantt: 'Overlap', people: 'People', places: 'Places', insights: 'Insights' };
+const VIEWS = ['timeline', 'people', 'places', 'insights'];
+const VIEW_TITLE = { timeline: 'Fwiends', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
-const LS_ORIENT = 'podtl.orient';
+const LS_MODE = 'podtl.mode';
+const MODES = [['list', 'rows'], ['flow', 'columns'], ['overlap', 'gantt']];
 
 const state = {
   view: 'timeline',
-  orient: localStorage.getItem(LS_ORIENT) === 'h' ? 'h' : 'v',
+  mode: ['list', 'flow', 'overlap'].includes(localStorage.getItem(LS_MODE))
+    ? localStorage.getItem(LS_MODE)
+    : (localStorage.getItem('podtl.orient') === 'h' ? 'flow' : 'list'),
+  compare: new Set(),
   _anim: false,
   q: '',
   types: new Set(),
@@ -263,13 +269,14 @@ function timelineGroupsHTML() {
       ${filterCount() || state.q ? `<button class="btn tint" data-act="clear-filters">Clear everything</button>` : ''}
     </div>`;
   }
+  if (state.mode === 'overlap') return overlapPanelHTML(evs);
   const groups = new Map();
   for (const e of evs) {
     const k = e.year ?? 'Undated';
     (groups.get(k) || groups.set(k, []).get(k)).push(e);
   }
   let i = 0;
-  if (state.orient === 'h') {
+  if (state.mode === 'flow') {
     return `<div class="hrail" id="hrail">${[...groups.entries()].map(([year, list]) => `
       <div class="hitem ymark" id="yg-${year}" data-year="${year}">
         <h2>${year}</h2><span>${list.length} ${list.length === 1 ? 'moment' : 'moments'}</span>
@@ -284,18 +291,28 @@ function timelineGroupsHTML() {
     </section>`).join('');
 }
 
-function activeFilterChips() {
-  const bits = [];
-  for (const t of state.types) bits.push(['ftype', t, typeIcon(t) + esc(t)]);
-  for (const p of state.people) bits.push(['fperson', p, avatar(p, 'xs') + esc(p)]);
-  for (const l of state.places) bits.push(['fplace', l, icon('pin') + esc(l)]);
-  for (const y of state.years) bits.push(['fyear', y, icon('calendar') + esc(y)]);
-  if (state.scope) bits.push(['fscope', state.scope, esc(state.scope)]);
-  if (!bits.length) return '';
-  return `<div class="chiprow active-filters">
-    ${bits.map(([act, v, label]) =>
-      `<button class="chip fchip on" data-act="${act}" data-v="${esc(v)}">${label}${icon('x', 'xs-ic')}</button>`).join('')}
-    <button class="chip clear" data-act="clear-filters">Clear all</button>
+/* one-line filter pickers */
+function pickerLabels() {
+  const y = [...state.years].sort();
+  const p = [...state.people];
+  const t = [...state.types];
+  return {
+    year: !y.length ? 'Any year' : y.length === 1 ? String(y[0]) : `${y.length} years`,
+    person: !p.length ? 'Anyone' : p.length === 1 ? p[0].split(' ')[0] : `${p.length} people`,
+    kind: !t.length ? 'Any kind' : t.length === 1 ? t[0] : `${t.length} kinds`,
+  };
+}
+
+function pickerRow() {
+  const L = pickerLabels();
+  const btn = (kind, ic, label, on) => `
+    <button class="picker${on ? ' on' : ''}" data-act="pick" data-k="${kind}">
+      ${icon(ic)}<span>${esc(label)}</span>${icon('chevdown', 'pchev')}
+    </button>`;
+  return `<div class="pickerrow">
+    ${btn('year', 'calendar', L.year, state.years.size)}
+    ${btn('person', 'users', L.person, state.people.size)}
+    ${btn('kind', 'spark', L.kind, state.types.size)}
   </div>`;
 }
 
@@ -303,10 +320,6 @@ function timelineHTML() {
   const evs = filtered();
   const [y0, y1] = yearsRange();
   const total = state.events.length;
-  const typeCounts = new Map();
-  for (const e of state.events) typeCounts.set(e.type, (typeCounts.get(e.type) || 0) + 1);
-  const presentTypes = TYPE_ORDER.filter(t => typeCounts.has(t));
-  const years = [...new Set(state.events.map(e => e.year).filter(Boolean))].sort();
   const fc = filterCount();
 
   return `
@@ -318,131 +331,204 @@ function timelineHTML() {
           <h1>Fwiends</h1>
         </div>
         <div class="hbtns">
-          <button class="hbtn" data-act="toggle-orient" aria-label="Switch to ${state.orient === 'h' ? 'vertical' : 'horizontal'} timeline">${icon(state.orient === 'h' ? 'rows' : 'columns')}</button>
+          <div class="seg-mini" role="group" aria-label="Timeline layout">
+            ${MODES.map(([m, ic]) => `
+              <button class="seg-ic${state.mode === m ? ' on' : ''}" data-act="set-mode" data-v="${m}"
+                aria-label="${m === 'list' ? 'Vertical timeline' : m === 'flow' ? 'Horizontal timeline' : 'Overlap chart'}">${icon(ic)}</button>`).join('')}
+          </div>
           <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
-          <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="Filters" data-badge="${fc || ''}">${icon('sliders')}</button>
+          <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="More filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
       </div>
       <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables</p>
       <p class="sub">The Pod’s timeline · ${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
-      <label class="searchwrap">${icon('search')}<input id="q" type="search" placeholder="Search moments, people, places" value="${esc(state.q)}" autocomplete="off">${state.q ? `<button class="clearq" data-act="clear-q" aria-label="Clear search">${icon('x')}</button>` : ''}</label>
-      <div class="chiprow">
-        <button class="chip tchip all${state.types.size ? '' : ' on'}" data-act="ftype-all">All</button>
-        ${presentTypes.map(t => typeChip(t, typeCounts.get(t), state.types.has(t))).join('')}
-      </div>
-      <div class="chiprow peoplerow">
-        ${allPeople().map(p => `
-          <button class="chip pchip${state.people.has(p.name) ? ' on' : ''}" data-act="fperson" data-v="${esc(p.name)}">
-            ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span></button>`).join('')}
-      </div>
-      ${years.length > 1 ? `<div class="chiprow yearrow">${years.map(y =>
-        `<button class="chip ypill" data-act="jump-year" data-v="${y}">${y}</button>`).join('')}</div>` : ''}
-      ${activeFilterChips()}
+      <button class="searchwrap faux" data-act="open-search">
+        ${icon('search')}<span class="${state.q ? 'qtext' : 'ph'}">${esc(state.q || 'Search moments, people, places')}</span>
+        ${state.q ? `<span class="clearq" data-act="clear-q" role="button" tabindex="0" aria-label="Clear search">${icon('x')}</span>` : ''}
+      </button>
+      ${pickerRow()}
     </div>
-    <div id="tl-content" class="tl-content${state.orient === 'h' ? ' tl-h' : ''}">${timelineGroupsHTML()}</div>
+    <div id="tl-content" class="tl-content${state.mode === 'flow' ? ' tl-h' : ''}">${timelineGroupsHTML()}</div>
   </div>`;
 }
 
-/* ── gantt view ────────────────────────────────────────────── */
-function ganttHTML() {
-  const dated = state.events.filter(e => e.year);
-  const undated = state.events.length - dated.length;
-  const [y0, y1] = yearsRange();
+/* ── overlap layout (inside the Timeline view) ─────────────── */
+const GX = { PXY: 150, PADL: 20, BARW: 172, BARGAP: 6, LANEH: 42, ROWPAD: 14 };
+const gfy = e => e.year + (e.when.m ? (e.when.m - 1) / 12 + (e.when.day ? (e.when.day - 1) / 372 : 0.04) : 0.45);
 
+function lanePack(list, xOf) {
+  const laneEnds = [];
+  const placed = list.map(e => {
+    const xx = Math.round(xOf(e));
+    let lane = laneEnds.findIndex(end => xx >= end + GX.BARGAP);
+    if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+    laneEnds[lane] = xx + GX.BARW;
+    return { e, xx, lane };
+  });
+  return { placed, lanes: laneEnds.length };
+}
+
+function gBar({ e, xx, lane }, extra = '') {
+  return `
+  <button class="g-bar${extra ? ' cmp' : ''}" data-act="event-sheet" data-v="${e.id}"
+    aria-label="${esc(e.note.slice(0, 80))}"
+    style="left:${xx}px;top:${Math.round(GX.ROWPAD / 2) + lane * GX.LANEH}px;--tc:${typeVar(e.type)};${extra}">
+    <b><i></i>${firstMeets().has(e.id) ? icon('spark', 'bspark') : ''}${esc(e.note)}</b>
+    <small>${esc(e.when.label)}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+  </button>`;
+}
+
+function gAxisRow(years, y0, W) {
+  return `
+  <div class="g-row g-axisrow">
+    <div class="g-name g-corner" aria-hidden="true"></div>
+    <div class="g-track g-axistrack" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">
+      ${years.map(yy => `<span class="g-year" style="left:${GX.PADL + (yy - y0) * GX.PXY}px">${yy}</span>`).join('')}
+    </div>
+  </div>`;
+}
+
+function overlapPanelHTML(evs) {
+  const dated = evs.filter(e => e.year);
+  const undated = evs.length - dated.length;
   if (!dated.length) {
-    return `
-    <div class="view v-gantt${state._anim ? ' anim' : ''}">
-      <div class="lhead">
-        <div class="lrow"><h1>Overlap</h1>
-          <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
-        </div>
-        <p class="sub">Everyone’s timeline, side by side</p>
-      </div>
-      <div class="empty">
-        <div class="empty-ic">${icon('gantt')}</div>
-        <h3>Nothing to chart yet</h3>
-        <p>Moments need a year to appear here.</p>
-      </div>
+    return `<div class="empty">
+      <div class="empty-ic">${icon('gantt')}</div>
+      <h3>Nothing to chart yet</h3>
+      <p>Moments need a year to appear on the overlap chart.</p>
     </div>`;
   }
 
-  // fractional-year position; month-less moments sit mid-year
-  const fy = e => e.year + (e.when.m ? (e.when.m - 1) / 12 + (e.when.day ? (e.when.day - 1) / 372 : 0.04) : 0.45);
-  const PXY = 150, PADL = 20, BARW = 172, BARGAP = 6, LANEH = 42, ROWPAD = 14;
-  const PADR = BARW + 26;
-  const W = (y1 - y0 + 1) * PXY + PADL + PADR;
-  const xOf = e => PADL + (fy(e) - y0) * PXY;
-
-  const rows = allPeople()
-    .map(p => ({
-      p,
-      list: dated.filter(e => e.person === p.name || e.rel.includes(p.name)).sort((a, b) => fy(a) - fy(b)),
-    }))
-    .filter(r => r.list.length)
-    .sort((a, b) => fy(a.list[0]) - fy(b.list[0]));
-
+  const ys = dated.map(e => e.year);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const W = (y1 - y0 + 1) * GX.PXY + GX.PADL + GX.BARW + 26;
+  const xOf = e => GX.PADL + (gfy(e) - y0) * GX.PXY;
   const years = [];
   for (let y = y0; y <= y1; y++) years.push(y);
+
+  const rows = allPeople()
+    .map(p => ({ p, list: dated.filter(e => e.person === p.name || e.rel.includes(p.name)).sort((a, b) => gfy(a) - gfy(b)) }))
+    .filter(r => r.list.length)
+    .sort((a, b) => gfy(a.list[0]) - gfy(b.list[0]));
+
+  const sel = rows.filter(r => state.compare.has(r.p.name));
+  const comparing = sel.length >= 2;
   const legend = TYPE_ORDER.filter(t => dated.some(e => e.type === t));
 
-  return `
-  <div class="view v-gantt${state._anim ? ' anim' : ''}">
-    <div class="lhead">
-      <div class="lrow"><h1>Overlap</h1>
-        <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
-      </div>
-      <p class="sub">Everyone’s timeline, side by side · ${rows.length} people · ${y0}–${y1}</p>
-    </div>
+  const tray = `
+  <div class="cmp-tray">
+    <span class="cmp-label">${icon('users')} Compare</span>
+    ${rows.map(({ p }) => `
+      <button class="chip cchip${state.compare.has(p.name) ? ' on' : ''}" data-act="gcompare" data-v="${esc(p.name)}"
+        style="--pc:hsl(${hueOf(p.name)} 65% 48%)">
+        ${avatar(p.name, 'xs')}<span>${esc(p.name.split(' ')[0])}</span></button>`).join('')}
+    ${state.compare.size ? `<button class="chip clear" data-act="cmp-clear">Clear</button>` : ''}
+  </div>
+  ${state.compare.size === 1 ? `<p class="cmp-hint">Pick one more person to overlap their timelines</p>` : ''}`;
 
-    <div class="card gpanel" style="--i:0">
-      <div class="g-scroll">
-        <div class="g-inner" style="width:${W + 138}px">
-          <div class="g-row g-axisrow">
-            <div class="g-name g-corner" aria-hidden="true"></div>
-            <div class="g-track g-axistrack" style="width:${W}px;--gx:${PADL}px;--gpy:${PXY}px">
-              ${years.map(yy => `<span class="g-year" style="left:${PADL + (yy - y0) * PXY}px">${yy}</span>`).join('')}
-            </div>
-          </div>
-          ${rows.map(({ p, list }) => {
-            const h = hueOf(p.name);
-            // lane-pack the bars: overlapping events drop to the next lane
-            const laneEnds = [];
-            const placed = list.map(e => {
-              const xx = Math.round(xOf(e));
-              let lane = laneEnds.findIndex(end => xx >= end + BARGAP);
-              if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
-              laneEnds[lane] = xx + BARW;
-              return { e, xx, lane };
-            });
-            const rowH = Math.max(laneEnds.length * LANEH + ROWPAD, 54);
-            const bars = placed.map(({ e, xx, lane }) => `
-              <button class="g-bar" data-act="event-sheet" data-v="${e.id}"
-                aria-label="${esc(e.note.slice(0, 80))}"
-                style="left:${xx}px;top:${Math.round(ROWPAD / 2) + lane * LANEH}px;--tc:${typeVar(e.type)}">
-                <b><i></i>${firstMeets().has(e.id) ? icon('spark', 'bspark') : ''}${esc(e.note)}</b>
-                <small>${esc(e.when.label)}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
-              </button>`).join('');
-            const xStart = placed[0].xx;
-            const xEnd = Math.max(...placed.map(b => b.xx)) + BARW;
-            return `
-            <div class="g-row" style="height:${rowH}px">
-              <button class="g-name" data-act="person-sheet" data-v="${esc(p.name)}">
-                ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>
-              </button>
-              <div class="g-track" style="width:${W}px;--gx:${PADL}px;--gpy:${PXY}px">
-                <i class="g-span" style="left:${xStart}px;width:${Math.min(xEnd - xStart, W - xStart - 8)}px;background:hsl(${h} 62% 50% / .14)"></i>
-                ${bars}
-              </div>
-            </div>`;
-          }).join('')}
+  let body;
+  if (comparing) {
+    // each person lane-packs from lane 0 in the SAME space; translucent
+    // person-hue bars make shared stretches visibly overlap
+    let maxLanes = 1;
+    const layers = sel.map(({ p, list }) => {
+      const { placed, lanes } = lanePack(list, xOf);
+      maxLanes = Math.max(maxLanes, lanes);
+      const h = hueOf(p.name);
+      return placed.map(b => gBar(b, `--pc:hsl(${h} 68% 48%);--pcs:hsl(${h} 68% 42%)`)).join('');
+    }).join('');
+    const H = maxLanes * GX.LANEH + GX.ROWPAD + 6;
+    body = `
+    <div class="g-row g-cmp" style="height:${H}px">
+      <div class="g-name g-cmpname">${sel.map(({ p }) => avatar(p.name, 'xs stack')).join('')}<span>Together</span></div>
+      <div class="g-track" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">${layers}</div>
+    </div>`;
+  } else {
+    body = rows.map(({ p, list }) => {
+      const h = hueOf(p.name);
+      const { placed, lanes } = lanePack(list, xOf);
+      const rowH = Math.max(lanes * GX.LANEH + GX.ROWPAD, 54);
+      const xStart = placed[0].xx;
+      const xEnd = Math.max(...placed.map(b => b.xx)) + GX.BARW;
+      return `
+      <div class="g-row" style="height:${rowH}px">
+        <button class="g-name${state.compare.has(p.name) ? ' sel' : ''}" data-act="gcompare" data-v="${esc(p.name)}">
+          ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>${state.compare.has(p.name) ? icon('check', 'gcheck') : ''}
+        </button>
+        <div class="g-track" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">
+          <i class="g-span" style="left:${xStart}px;width:${Math.min(xEnd - xStart, W - xStart - 8)}px;background:hsl(${h} 62% 50% / .14)"></i>
+          ${placed.map(b => gBar(b)).join('')}
         </div>
-      </div>
-      <div class="g-legend">
-        ${legend.map(t => `<span class="g-leg"><i style="background:${typeVar(t)}"></i>${esc(t)}</span>`).join('')}
+      </div>`;
+    }).join('');
+  }
+
+  return `
+  ${tray}
+  <div class="card gpanel" style="--i:0">
+    <div class="g-scroll">
+      <div class="g-inner" style="width:${W + 138}px">
+        ${gAxisRow(years, y0, W)}
+        ${body}
       </div>
     </div>
-    ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the chart — they have no year in the sheet</p>` : ''}
+    <div class="g-legend">
+      ${comparing
+        ? sel.map(({ p }) => `<span class="g-leg"><i style="background:hsl(${hueOf(p.name)} 65% 48%)"></i>${esc(p.name)}</span>`).join('')
+        : legend.map(t => `<span class="g-leg"><i style="background:${typeVar(t)}"></i>${esc(t)}</span>`).join('')}
+    </div>
+  </div>
+  ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the chart — no year in the sheet</p>` : ''}`;
+}
+
+/* ── picker sheets (Year / Person / Kind) ──────────────────── */
+let currentPicker = null;
+const pickerSet = k => k === 'year' ? state.years : k === 'person' ? state.people : state.types;
+
+function pickerBody(kind) {
+  const set = pickerSet(kind);
+  let title, allLabel, opts;
+  if (kind === 'year') {
+    title = 'Year'; allLabel = 'Any year';
+    const counts = new Map();
+    for (const e of state.events) if (e.year) counts.set(e.year, (counts.get(e.year) || 0) + 1);
+    opts = [...counts.keys()].sort().map(y => ({ v: y, label: String(y), lead: icon('calendar'), count: counts.get(y) }));
+  } else if (kind === 'person') {
+    title = 'Person'; allLabel = 'Everyone';
+    opts = allPeople().map(p => ({ v: p.name, label: p.name, lead: avatar(p.name, 'xs'), count: p.count }));
+  } else {
+    title = 'Kind'; allLabel = 'Any kind';
+    const counts = new Map();
+    for (const e of state.events) counts.set(e.type, (counts.get(e.type) || 0) + 1);
+    opts = TYPE_ORDER.filter(t => counts.has(t)).map(t => ({
+      v: t, label: t, lead: `<span class="opt-tdot" style="--tc:${typeVar(t)}">${typeIcon(t)}</span>`, count: counts.get(t),
+    }));
+  }
+  const n = filtered().length;
+  return `
+  <div class="pickersheet">
+    <div class="fsheet-head"><h2>${title}</h2>
+      <button class="btn ghost" data-act="close-sheet">Done</button>
+    </div>
+    <div class="optlist">
+      <button class="opt${set.size === 0 ? ' sel' : ''}" data-act="opt-all" data-k="${kind}">
+        <span class="opt-main">${allLabel}</span>${set.size === 0 ? icon('check', 'optcheck') : ''}
+      </button>
+      ${opts.map(o => `
+      <button class="opt${set.has(o.v) ? ' sel' : ''}" data-act="opt" data-k="${kind}" data-v="${esc(o.v)}">
+        ${o.lead}<span class="opt-main">${esc(o.label)}</span><b>${o.count}</b>${set.has(o.v) ? icon('check', 'optcheck') : ''}
+      </button>`).join('')}
+    </div>
+    <p class="opt-count">${n} ${n === 1 ? 'moment' : 'moments'} match</p>
   </div>`;
+}
+function pickerSheet(kind) { currentPicker = kind; openSheet(pickerBody(kind), 'picker'); }
+function refreshPickerSheet() {
+  const body = $('#sheet-root .sheet-body');
+  if (!body || !currentPicker) return;
+  const pos = body.scrollTop;
+  body.innerHTML = pickerBody(currentPicker);
+  body.scrollTop = pos;
 }
 
 /* ── people view ───────────────────────────────────────────── */
@@ -581,17 +667,14 @@ function insightsHTML() {
 
 /* ── render machinery ──────────────────────────────────────── */
 const viewHTML = () => ({
-  timeline: timelineHTML, gantt: ganttHTML, people: peopleHTML, places: placesHTML, insights: insightsHTML,
+  timeline: timelineHTML, people: peopleHTML, places: placesHTML, insights: insightsHTML,
 }[state.view]());
 
-let revealIO = null, yearIO = null;
+let revealIO = null;
 function afterRender() {
   $('#cbar-title').textContent = VIEW_TITLE[state.view];
 
   $$('#tabbar .tab').forEach(b => b.classList.toggle('on', b.dataset.v === state.view));
-
-  const q = $('#q');
-  if (q) q.addEventListener('input', onSearch);
 
   revealIO?.disconnect();
   // Ambient reveal: cards drift in when they enter the viewport and slip
@@ -613,21 +696,6 @@ function afterRender() {
   }, { rootMargin: '4% 3% -5% 3%' });
   $$('.card').forEach(c => revealIO.observe(c));
 
-  yearIO?.disconnect();
-  const marks = $$('.ygroup, .ymark');
-  if (marks.length) {
-    yearIO = new IntersectionObserver(entries => {
-      for (const en of entries) {
-        if (en.isIntersecting) {
-          const y = en.target.dataset.year;
-          $$('.ypill').forEach(p => p.classList.toggle('on', p.dataset.v === y));
-        }
-      }
-    }, state.orient === 'h' && $('#hrail')
-      ? { root: $('#hrail'), rootMargin: '0px -55% 0px -5%' }
-      : { rootMargin: '-25% 0px -65% 0px' });
-    marks.forEach(g => yearIO.observe(g));
-  }
 }
 
 function render({ dir = 0, restoreScroll = true } = {}) {
@@ -644,9 +712,15 @@ function render({ dir = 0, restoreScroll = true } = {}) {
   } else doIt();
 }
 
-function refreshTimelineContent() {
-  const c = $('#tl-content');
-  if (c) { c.innerHTML = timelineGroupsHTML(); $$('.card', c).forEach(el => revealIO.observe(el)); }
+/* re-render the current view in place (no view transition, no entrance
+   flicker) — used while a sheet is open or for live filter updates */
+function softRender() {
+  const y = window.scrollY;
+  const main = $('#main');
+  main.innerHTML = viewHTML();
+  $$('.card', main).forEach(c => { c.classList.add('in'); c.dataset.seen = '1'; });
+  afterRender();
+  window.scrollTo(0, y);
 }
 
 /* ── sheets (modal bottom sheets) ──────────────────────────── */
@@ -669,6 +743,7 @@ function closeSheet() {
   if (!sheetOpen) return;
   root.classList.remove('open');
   sheetOpen = false;
+  currentPicker = null;
   setTimeout(() => { if (!sheetOpen) { root.innerHTML = ''; document.body.classList.remove('locked'); } }, 320);
 }
 function enableSheetDrag(sheet) {
@@ -755,19 +830,15 @@ function personSheet(name) {
     </div>`);
 }
 
-/* ── filter sheet ──────────────────────────────────────────── */
+/* ── filter sheet (scope + places; the rest live in the pickers) ── */
 function filterSheetBody() {
-  const people = allPeople();
   const places = allPlaces();
-  const years = [...new Set(state.events.map(e => e.year).filter(Boolean))].sort();
-  const typeCounts = new Map();
-  for (const e of state.events) typeCounts.set(e.type, (typeCounts.get(e.type) || 0) + 1);
   const n = filtered().length;
 
   return `
     <div class="fsheet">
-      <div class="fsheet-head"><h2>Filters</h2>
-        <button class="btn ghost" data-act="clear-filters">Reset</button>
+      <div class="fsheet-head"><h2>More filters</h2>
+        <button class="btn ghost" data-act="clear-filters">Reset all</button>
       </div>
 
       <h4>Scope</h4>
@@ -776,29 +847,11 @@ function filterSheetBody() {
           `<button class="seg-btn${state.scope === s ? ' on' : ''}" data-act="fscope" data-v="${s}">${s || 'All'}</button>`).join('')}
       </div>
 
-      <h4>Kind</h4>
-      <div class="chipwrap">
-        ${TYPE_ORDER.filter(t => typeCounts.has(t)).map(t => typeChip(t, typeCounts.get(t), state.types.has(t))).join('')}
-      </div>
-
-      <h4>People</h4>
-      <div class="chipwrap">
-        ${people.map(p => `
-          <button class="chip pchip${state.people.has(p.name) ? ' on' : ''}" data-act="fperson" data-v="${esc(p.name)}">
-            ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span><b>${p.count}</b></button>`).join('')}
-      </div>
-
       <h4>Places</h4>
       <div class="chipwrap">
         ${places.map(p => `
           <button class="chip lchip${state.places.has(p.name) ? ' on' : ''}" data-act="fplace" data-v="${esc(p.name)}">
             ${icon('pin')}<span>${esc(p.name)}</span><b>${p.count}</b></button>`).join('')}
-      </div>
-
-      <h4>Years</h4>
-      <div class="chipwrap">
-        ${years.map(y => `
-          <button class="chip ypill${state.years.has(y) ? ' on' : ''}" data-act="fyear" data-v="${y}">${y}</button>`).join('')}
       </div>
 
       <div class="sheet-actions">
@@ -939,6 +992,148 @@ async function connectSheet(url, { silent = false } = {}) {
   if (!silent) toast(`Synced ${seed.length} moments from your sheet`);
 }
 
+/* ── full-screen search ────────────────────────────────────── */
+let searchOpen = false, sQuery = '';
+const LS_RECENTS = 'podtl.recents';
+const recents = () => { try { return JSON.parse(localStorage.getItem(LS_RECENTS)) || []; } catch { return []; } };
+function saveRecent(q) {
+  const t = q.trim();
+  if (t.length < 2) return;
+  const list = [t, ...recents().filter(r => r.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+  localStorage.setItem(LS_RECENTS, JSON.stringify(list));
+}
+
+const hi = (text, q) => {
+  if (!q) return esc(text);
+  const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
+  return String(text).split(rx).map((part, i) => i % 2 ? `<mark>${esc(part)}</mark>` : esc(part)).join('');
+};
+
+function searchBodyHTML() {
+  const q = sQuery.trim();
+  if (!q) {
+    const rec = recents();
+    const people = allPeople().slice(0, 8);
+    const places = allPlaces().slice(0, 6);
+    const kinds = TYPE_ORDER.filter(t => state.events.some(e => e.type === t));
+    return `
+    ${rec.length ? `
+    <div class="s-sec" style="--s:0">
+      <div class="s-sechead"><h4>Recent</h4><button class="s-mini" data-act="search-clear-recents">Clear</button></div>
+      <div class="chipwrap">${rec.map(r => `<button class="chip" data-act="search-sugg" data-v="${esc(r)}">${icon('clock')}<span>${esc(r)}</span></button>`).join('')}</div>
+    </div>` : ''}
+    <div class="s-sec" style="--s:1">
+      <h4>People</h4>
+      <div class="chipwrap">${people.map(p => `<button class="chip pchip" data-act="search-sugg" data-v="${esc(p.name)}">${avatar(p.name, 'xs')}<span>${esc(p.name)}</span></button>`).join('')}</div>
+    </div>
+    <div class="s-sec" style="--s:2">
+      <h4>Places</h4>
+      <div class="chipwrap">${places.map(p => `<button class="chip lchip" data-act="search-sugg" data-v="${esc(p.name)}">${icon('pin')}<span>${esc(p.name)}</span></button>`).join('')}</div>
+    </div>
+    <div class="s-sec" style="--s:3">
+      <h4>Kinds</h4>
+      <div class="chipwrap">${kinds.map(t => typeChip(t, null, false).replace('data-act="ftype"', 'data-act="search-sugg"')).join('')}</div>
+    </div>
+    <div class="s-sec s-randwrap" style="--s:4">
+      <button class="btn wide" data-act="search-random">${icon('spark')} Surprise me with a moment</button>
+    </div>`;
+  }
+
+  const qq = q.toLowerCase();
+  const evs = state.events.filter(e =>
+    [e.note, e.person, e.rel.join(' '), e.loc, e.type, e.when.label, e.year].join(' ').toLowerCase().includes(qq));
+  const people = allPeople().filter(p => p.name.toLowerCase().includes(qq));
+  const places = allPlaces().filter(p => p.name.toLowerCase().includes(qq));
+  const kinds = TYPE_ORDER.filter(t => state.events.some(e => e.type === t) && t.toLowerCase().includes(qq));
+
+  if (!evs.length && !people.length && !places.length && !kinds.length) {
+    return `<div class="empty s-empty">
+      <div class="empty-ic">${icon('search')}</div>
+      <h3>No results for “${esc(q)}”</h3>
+      <p>Try a name, a place, or a word from a moment.</p>
+    </div>`;
+  }
+
+  let i = 0;
+  return `
+  ${evs.length ? `<div class="s-sec" style="--s:0">
+    <button class="btn tint wide" data-act="search-apply">${icon('clock')} Show ${evs.length} ${evs.length === 1 ? 'moment' : 'moments'} in Timeline</button>
+  </div>` : ''}
+  ${people.length ? `<div class="s-sec" style="--s:1">
+    <h4>People</h4>
+    <div class="chipwrap">${people.map(p => `<button class="chip pchip" data-act="person-sheet" data-v="${esc(p.name)}">${avatar(p.name, 'xs')}<span>${hi(p.name, q)}</span><b>${p.count}</b></button>`).join('')}</div>
+  </div>` : ''}
+  ${places.length ? `<div class="s-sec" style="--s:2">
+    <h4>Places</h4>
+    <div class="chipwrap">${places.map(p => `<button class="chip lchip" data-act="fplace-go" data-v="${esc(p.name)}">${icon('pin')}<span>${hi(p.name, q)}</span><b>${p.count}</b></button>`).join('')}</div>
+  </div>` : ''}
+  ${kinds.length ? `<div class="s-sec" style="--s:2">
+    <h4>Kinds</h4>
+    <div class="chipwrap">${kinds.map(t => `<button class="chip tchip" style="--tc:${typeVar(t)}" data-act="ftype-go" data-v="${esc(t)}">${typeIcon(t)}<span>${hi(t, q)}</span></button>`).join('')}</div>
+  </div>` : ''}
+  ${evs.length ? `<div class="s-sec" style="--s:3">
+    <h4>Moments</h4>
+    ${evs.slice(0, 40).map(e => `
+    <button class="s-row" style="--i:${i++}" data-act="event-sheet" data-v="${e.id}">
+      <span class="mini-dot" style="--tc:${typeVar(e.type)}"></span>
+      <span class="s-main">
+        <b>${hi(e.note.length > 110 ? e.note.slice(0, 110) + '…' : e.note, q)}</b>
+        <small>${esc(e.when.label)}${e.person ? ` · ${esc(e.person)}` : ''}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+      </span>
+      ${icon('chevron', 'chev')}
+    </button>`).join('')}
+    ${evs.length > 40 ? `<p class="g-note">Showing 40 of ${evs.length} — keep typing to narrow down</p>` : ''}
+  </div>` : ''}`;
+}
+
+let sTimer = null;
+function renderSearchBody() {
+  const body = $('#s-body');
+  if (body) body.innerHTML = searchBodyHTML();
+}
+function openSearch() {
+  if (searchOpen) return;
+  searchOpen = true;
+  sQuery = state.q;
+  const root = $('#search-root');
+  root.innerHTML = `
+  <div class="s-panel">
+    <div class="s-head">
+      <label class="searchwrap s-input">${icon('search')}
+        <input id="sq" type="search" placeholder="Search moments, people, places" value="${esc(sQuery)}" autocomplete="off" enterkeyhint="search">
+      </label>
+      <button class="s-cancel" data-act="close-search">Cancel</button>
+    </div>
+    <div class="s-body" id="s-body">${searchBodyHTML()}</div>
+  </div>`;
+  document.body.classList.add('searching');
+  const input = $('#sq');
+  input.addEventListener('input', () => {
+    clearTimeout(sTimer);
+    sTimer = setTimeout(() => { sQuery = input.value; renderSearchBody(); }, 110);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.classList.add('open');
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+  }));
+}
+function closeSearch() {
+  if (!searchOpen) return;
+  searchOpen = false;
+  const root = $('#search-root');
+  root.classList.remove('open');
+  document.body.classList.remove('searching');
+  setTimeout(() => { if (!searchOpen) root.innerHTML = ''; }, 380);
+}
+function applySearch() {
+  state.q = sQuery.trim();
+  saveRecent(state.q);
+  closeSearch();
+  if (state.view !== 'timeline') { state.view = 'timeline'; }
+  render();
+}
+
 /* ── toast ─────────────────────────────────────────────────── */
 let toastTimer = null;
 function toast(msg) {
@@ -950,15 +1145,6 @@ function toast(msg) {
 }
 
 /* ── interactions ──────────────────────────────────────────── */
-let searchTimer = null;
-function onSearch(e) {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.q = e.target.value;
-    refreshTimelineContent();
-  }, 120);
-}
-
 const toggle = (set, v) => set.has(v) ? set.delete(v) : set.add(v);
 
 function goTimeline() {
@@ -966,6 +1152,7 @@ function goTimeline() {
   state.view = 'timeline';
   state.scroll.timeline = 0;
   closeSheet();
+  closeSearch();
   render({ dir, restoreScroll: false });
 }
 
@@ -984,12 +1171,6 @@ document.addEventListener('click', e => {
       render({ dir });
       break;
     }
-    case 'toggle-orient':
-      state.orient = state.orient === 'h' ? 'v' : 'h';
-      localStorage.setItem(LS_ORIENT, state.orient);
-      state._anim = true;
-      render({ restoreScroll: false });
-      break;
     case 'event-sheet':  eventSheet(v); break;
     case 'person-sheet': personSheet(v); break;
     case 'settings-sheet': settingsSheet(); break;
@@ -997,12 +1178,49 @@ document.addEventListener('click', e => {
     case 'close-sheet':  closeSheet(); break;
     case 'apply-filters': closeSheet(); if (state.view !== 'timeline') goTimeline(); else render(); break;
 
-    case 'ftype-all': state.types.clear(); render(); break;
-    case 'ftype':  toggle(state.types, v);  sheetOpen ? refreshFilterSheet() : render(); break;
-    case 'fperson': toggle(state.people, v); sheetOpen ? refreshFilterSheet() : render(); break;
-    case 'fplace': toggle(state.places, v); sheetOpen ? refreshFilterSheet() : render(); break;
-    case 'fyear':  toggle(state.years, +v || v); sheetOpen ? refreshFilterSheet() : render(); break;
-    case 'fscope': state.scope = v; sheetOpen ? refreshFilterSheet() : render(); break;
+    case 'set-mode':
+      if (v !== state.mode) {
+        state.mode = v;
+        localStorage.setItem(LS_MODE, v);
+        state._anim = false;
+        render({ restoreScroll: false });
+      }
+      break;
+
+    case 'pick': pickerSheet(el.dataset.k); break;
+    case 'opt-all': pickerSet(el.dataset.k).clear(); softRender(); refreshPickerSheet(); break;
+    case 'opt': {
+      const k = el.dataset.k;
+      toggle(pickerSet(k), k === 'year' ? +v : v);
+      softRender(); refreshPickerSheet();
+      break;
+    }
+
+    case 'gcompare': toggle(state.compare, v); softRender(); break;
+    case 'cmp-clear': state.compare.clear(); softRender(); break;
+
+    case 'open-search': openSearch(); break;
+    case 'close-search': closeSearch(); break;
+    case 'search-apply': applySearch(); break;
+    case 'search-sugg': {
+      sQuery = v;
+      const input = $('#sq');
+      if (input) { input.value = v; input.focus({ preventScroll: true }); }
+      renderSearchBody();
+      break;
+    }
+    case 'search-clear-recents': localStorage.removeItem(LS_RECENTS); renderSearchBody(); break;
+    case 'search-random': {
+      const evs = state.events;
+      if (evs.length) eventSheet(evs[Math.floor(Math.random() * evs.length)].id);
+      break;
+    }
+
+    case 'ftype':  toggle(state.types, v);  sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
+    case 'fperson': toggle(state.people, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
+    case 'fplace': toggle(state.places, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
+    case 'fyear':  toggle(state.years, +v || v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
+    case 'fscope': state.scope = v; sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
 
     case 'ftype-go':   state.types = new Set([v]); goTimeline(); break;
     case 'fperson-go': state.people = new Set([v]); goTimeline(); break;
@@ -1012,18 +1230,10 @@ document.addEventListener('click', e => {
     case 'clear-filters':
       state.types.clear(); state.people.clear(); state.places.clear();
       state.years.clear(); state.scope = ''; state.q = '';
-      sheetOpen ? refreshFilterSheet() : render();
-      if (!sheetOpen) toast('Filters cleared');
+      if (sheetOpen) { softRender(); refreshFilterSheet(); refreshPickerSheet(); }
+      else { render(); toast('Filters cleared'); }
       break;
     case 'clear-q': state.q = ''; render(); break;
-
-    case 'jump-year': {
-      const sec = $(`#yg-${v}`);
-      if (sec) sec.scrollIntoView(state.orient === 'h'
-        ? { behavior: 'smooth', block: 'nearest', inline: 'start' }
-        : { behavior: 'smooth', block: 'start' });
-      break;
-    }
 
     case 'sheet-connect': {
       const url = $('#sheet-url')?.value.trim();
@@ -1049,8 +1259,12 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && sheetOpen) closeSheet();
+  if (e.key === 'Escape') {
+    if (sheetOpen) closeSheet();
+    else if (searchOpen) closeSearch();
+  }
   if (e.key === 'Enter' && e.target.id === 'sheet-url') $('[data-act="sheet-connect"]')?.click();
+  if (e.key === 'Enter' && e.target.id === 'sq') applySearch();
 });
 
 /* compact top bar on scroll */
