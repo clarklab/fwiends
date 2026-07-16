@@ -12,19 +12,26 @@ Open `index.html` (or serve the folder) and it runs.
 
 ## Views
 
-- **Timeline** — moments grouped by year, with sticky year headers, a year
-  jumper, search, and type filter chips. Tap a card for the full story. The
-  rail runs **vertical or horizontal** — toggle it from the header (the
-  choice is remembered); horizontal mode is a snap-scrolling carousel with
-  inline year markers.
-- **Overlap** — everyone's individual timeline stacked as rows against one
-  horizontal time axis, project-tracker style: a span bar from each person's
-  first to last moment, and a labeled mini-bar for every moment (title +
-  date/place) so you can skim details without zooming. Overlapping moments
-  lane-stack; names stay pinned while the years scroll; tap a bar for the
-  moment, a name for the person. Moments where two people appear together
-  for the first time are marked with a ✨ everywhere — cards, detail sheets,
-  and the chart.
+- **Timeline** — the main view, with three layouts on a segmented control in
+  the header (the choice is remembered):
+  - **List** — vertical rail grouped by year with sticky year headers.
+  - **Flow** — a horizontal snap-scrolling carousel with inline year markers.
+  - **Overlap** — everyone's individual timeline stacked as rows against one
+    horizontal time axis, project-tracker style: a span bar from each
+    person's first to last moment and a labeled mini-bar for every moment
+    (title + date/place). Overlapping moments lane-stack; names stay pinned
+    while the years scroll. **Compare:** tap two or more names (or the
+    Compare tray chips) to overlay those people's timelines in one shared
+    space as translucent person-colored bars, so their shared history
+    literally overlaps. Moments where two people appear together for the
+    first time are marked with a ✨ everywhere — cards, detail sheets, and
+    the chart.
+
+  Filters live on one line: **Year**, **Person**, and **Kind** pickers, each
+  opening a native-style bottom sheet with counts and checkmarks
+  (multi-select). Scope (Pod/Self) and Places live behind the sliders
+  button; search stays up top. All filters combine and apply to every
+  layout, including Overlap.
 - **People** — everyone who appears in the story (as the main person *or* a
   related person), with their span of years and kinds of moments. Tap through
   to their personal timeline.

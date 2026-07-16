@@ -177,6 +177,71 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .searchwrap input::placeholder { color: var(--ink3); }
 .clearq { display: grid; place-items: center; color: var(--ink3); }
 
+/* mode segmented control (header) */
+.seg-mini {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--chipbg); border-radius: 999px; padding: 3px;
+}
+.seg-ic {
+  width: 34px; height: 32px; border-radius: 999px;
+  display: grid; place-items: center; color: var(--ink2);
+  transition: background .18s, color .18s, transform .15s var(--pop);
+}
+.seg-ic .ic { width: 17px; height: 17px; }
+.seg-ic:active { transform: scale(.9); }
+.seg-ic.on { background: var(--card); color: var(--tint-ink); box-shadow: var(--shadow); }
+
+/* one-line filter pickers */
+.pickerrow { display: flex; gap: 8px; padding: 2px 0 12px; }
+.picker {
+  flex: 1; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 10px; border-radius: 12px;
+  background: var(--card); box-shadow: var(--shadow);
+  font-size: 14px; font-weight: 600; letter-spacing: -0.15px;
+  transition: transform .16s var(--pop), background .2s, color .2s;
+}
+.picker:active { transform: scale(.96); }
+.picker .ic { width: 15px; height: 15px; color: var(--ink2); }
+.picker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker .pchev { width: 13px; height: 13px; color: var(--ink3); flex: none; }
+.picker.on { background: var(--tint); color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, var(--tint) 38%, transparent); }
+.picker.on .ic, .picker.on .pchev { color: rgba(255, 255, 255, .8); }
+
+/* picker option list (native-style grouped rows) */
+.optlist { background: var(--card); border-radius: 14px; overflow: hidden; margin-top: 6px; }
+.opt {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 12px 14px; text-align: left;
+  font-size: 15.5px; letter-spacing: -0.2px;
+}
+.opt + .opt { border-top: 0.5px solid var(--sep); }
+.opt:active { background: var(--press); }
+.opt-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt b { font-weight: 550; color: var(--ink3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.opt .ic:not(.optcheck) { width: 17px; height: 17px; color: var(--ink2); }
+.opt-tdot { display: grid; place-items: center; color: var(--tc); }
+.opt-tdot .ic { color: var(--tc) !important; }
+.opt.sel .opt-main { font-weight: 650; }
+.optcheck { width: 18px; height: 18px; color: var(--tint-ink); flex: none; stroke-width: 2.4; }
+.opt-count { color: var(--ink2); font-size: 13px; text-align: center; margin-top: 14px; }
+
+/* compare tray (overlap mode) */
+.cmp-tray {
+  display: flex; align-items: center; gap: 8px; overflow-x: auto;
+  padding: 2px 2px 12px; scrollbar-width: none; -ms-overflow-style: none;
+}
+.cmp-tray::-webkit-scrollbar { display: none; }
+.cmp-label {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+  color: var(--ink2);
+}
+.cmp-label .ic { width: 14px; height: 14px; }
+.cchip { padding-left: 4px; }
+.cchip.on { background: var(--pc); color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, var(--pc) 40%, transparent); }
+.cmp-hint { color: var(--ink2); font-size: 13px; margin: -4px 2px 12px; }
+
 /* ── chips ── */
 .chiprow {
   display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 12px;
@@ -456,6 +521,22 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 }
 .g-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-name:active { opacity: .6; }
+.g-name.sel { color: var(--tint-ink); }
+.gcheck { width: 14px; height: 14px; color: var(--tint-ink); flex: none; stroke-width: 2.4; }
+.g-cmpname { font-weight: 700; }
+.g-cmpname .avatar.stack:first-child { margin-left: 0; }
+
+/* comparison: translucent person-hue bars sharing one track */
+.g-bar.cmp {
+  background: color-mix(in srgb, var(--pc) 26%, var(--card) 30%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pcs) 65%, transparent);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.g-bar.cmp b i { background: var(--pc); }
+.g-bar.cmp:hover, .g-bar.cmp:focus-visible {
+  background: color-mix(in srgb, var(--pc) 34%, var(--card) 40%);
+  box-shadow: var(--shadow-lift), inset 0 0 0 1.5px var(--pcs);
+}
 .g-track {
   position: relative; height: 100%; flex: none;
   background-image: linear-gradient(to right, var(--sep) 1px, transparent 1px);
