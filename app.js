@@ -94,7 +94,7 @@ function parseWhen(d, y, approx) {
 
 /* ── state ─────────────────────────────────────────────────── */
 const VIEWS = ['timeline', 'people', 'places', 'insights'];
-const VIEW_TITLE = { timeline: 'Timeline', people: 'People', places: 'Places', insights: 'Insights' };
+const VIEW_TITLE = { timeline: 'Fwiends', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
 const LS_ORIENT = 'podtl.orient';
 
@@ -279,18 +279,26 @@ function timelineHTML() {
   <div class="view v-timeline${state._anim ? ' anim' : ''}">
     <div class="lhead">
       <div class="lrow">
-        <h1>Timeline</h1>
+        <div class="brand">
+          <img class="logo" src="logo.webp" alt="" width="44" height="44">
+          <h1>Fwiends</h1>
+        </div>
         <div class="hbtns">
           <button class="hbtn" data-act="toggle-orient" aria-label="Switch to ${state.orient === 'h' ? 'vertical' : 'horizontal'} timeline">${icon(state.orient === 'h' ? 'rows' : 'columns')}</button>
           <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
           <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="Filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
       </div>
-      <p class="sub">${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
+      <p class="sub">The Pod’s timeline · ${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
       <label class="searchwrap">${icon('search')}<input id="q" type="search" placeholder="Search moments, people, places" value="${esc(state.q)}" autocomplete="off">${state.q ? `<button class="clearq" data-act="clear-q" aria-label="Clear search">${icon('x')}</button>` : ''}</label>
       <div class="chiprow">
         <button class="chip tchip all${state.types.size ? '' : ' on'}" data-act="ftype-all">All</button>
         ${presentTypes.map(t => typeChip(t, typeCounts.get(t), state.types.has(t))).join('')}
+      </div>
+      <div class="chiprow peoplerow">
+        ${allPeople().map(p => `
+          <button class="chip pchip${state.people.has(p.name) ? ' on' : ''}" data-act="fperson" data-v="${esc(p.name)}">
+            ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span></button>`).join('')}
       </div>
       ${years.length > 1 ? `<div class="chiprow yearrow">${years.map(y =>
         `<button class="chip ypill" data-act="jump-year" data-v="${y}">${y}</button>`).join('')}</div>` : ''}
