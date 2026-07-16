@@ -342,7 +342,10 @@ function timelineHTML() {
       </div>
       <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables</p>
       <p class="sub">The Pod’s timeline · ${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
-      <label class="searchwrap">${icon('search')}<input id="q" type="search" placeholder="Search moments, people, places" value="${esc(state.q)}" autocomplete="off">${state.q ? `<button class="clearq" data-act="clear-q" aria-label="Clear search">${icon('x')}</button>` : ''}</label>
+      <button class="searchwrap faux" data-act="open-search">
+        ${icon('search')}<span class="${state.q ? 'qtext' : 'ph'}">${esc(state.q || 'Search moments, people, places')}</span>
+        ${state.q ? `<span class="clearq" data-act="clear-q" role="button" tabindex="0" aria-label="Clear search">${icon('x')}</span>` : ''}
+      </button>
       ${pickerRow()}
     </div>
     <div id="tl-content" class="tl-content${state.mode === 'flow' ? ' tl-h' : ''}">${timelineGroupsHTML()}</div>
@@ -673,9 +676,6 @@ function afterRender() {
 
   $$('#tabbar .tab').forEach(b => b.classList.toggle('on', b.dataset.v === state.view));
 
-  const q = $('#q');
-  if (q) q.addEventListener('input', onSearch);
-
   revealIO?.disconnect();
   // Ambient reveal: cards drift in when they enter the viewport and slip
   // away again when they leave — in both scroll directions. The stagger
@@ -710,11 +710,6 @@ function render({ dir = 0, restoreScroll = true } = {}) {
     document.documentElement.dataset.dir = dir > 0 ? 'fwd' : dir < 0 ? 'back' : 'fade';
     document.startViewTransition(doIt);
   } else doIt();
-}
-
-function refreshTimelineContent() {
-  const c = $('#tl-content');
-  if (c) { c.innerHTML = timelineGroupsHTML(); $$('.card', c).forEach(el => revealIO.observe(el)); }
 }
 
 /* re-render the current view in place (no view transition, no entrance
@@ -997,6 +992,148 @@ async function connectSheet(url, { silent = false } = {}) {
   if (!silent) toast(`Synced ${seed.length} moments from your sheet`);
 }
 
+/* ── full-screen search ────────────────────────────────────── */
+let searchOpen = false, sQuery = '';
+const LS_RECENTS = 'podtl.recents';
+const recents = () => { try { return JSON.parse(localStorage.getItem(LS_RECENTS)) || []; } catch { return []; } };
+function saveRecent(q) {
+  const t = q.trim();
+  if (t.length < 2) return;
+  const list = [t, ...recents().filter(r => r.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+  localStorage.setItem(LS_RECENTS, JSON.stringify(list));
+}
+
+const hi = (text, q) => {
+  if (!q) return esc(text);
+  const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
+  return String(text).split(rx).map((part, i) => i % 2 ? `<mark>${esc(part)}</mark>` : esc(part)).join('');
+};
+
+function searchBodyHTML() {
+  const q = sQuery.trim();
+  if (!q) {
+    const rec = recents();
+    const people = allPeople().slice(0, 8);
+    const places = allPlaces().slice(0, 6);
+    const kinds = TYPE_ORDER.filter(t => state.events.some(e => e.type === t));
+    return `
+    ${rec.length ? `
+    <div class="s-sec" style="--s:0">
+      <div class="s-sechead"><h4>Recent</h4><button class="s-mini" data-act="search-clear-recents">Clear</button></div>
+      <div class="chipwrap">${rec.map(r => `<button class="chip" data-act="search-sugg" data-v="${esc(r)}">${icon('clock')}<span>${esc(r)}</span></button>`).join('')}</div>
+    </div>` : ''}
+    <div class="s-sec" style="--s:1">
+      <h4>People</h4>
+      <div class="chipwrap">${people.map(p => `<button class="chip pchip" data-act="search-sugg" data-v="${esc(p.name)}">${avatar(p.name, 'xs')}<span>${esc(p.name)}</span></button>`).join('')}</div>
+    </div>
+    <div class="s-sec" style="--s:2">
+      <h4>Places</h4>
+      <div class="chipwrap">${places.map(p => `<button class="chip lchip" data-act="search-sugg" data-v="${esc(p.name)}">${icon('pin')}<span>${esc(p.name)}</span></button>`).join('')}</div>
+    </div>
+    <div class="s-sec" style="--s:3">
+      <h4>Kinds</h4>
+      <div class="chipwrap">${kinds.map(t => typeChip(t, null, false).replace('data-act="ftype"', 'data-act="search-sugg"')).join('')}</div>
+    </div>
+    <div class="s-sec s-randwrap" style="--s:4">
+      <button class="btn wide" data-act="search-random">${icon('spark')} Surprise me with a moment</button>
+    </div>`;
+  }
+
+  const qq = q.toLowerCase();
+  const evs = state.events.filter(e =>
+    [e.note, e.person, e.rel.join(' '), e.loc, e.type, e.when.label, e.year].join(' ').toLowerCase().includes(qq));
+  const people = allPeople().filter(p => p.name.toLowerCase().includes(qq));
+  const places = allPlaces().filter(p => p.name.toLowerCase().includes(qq));
+  const kinds = TYPE_ORDER.filter(t => state.events.some(e => e.type === t) && t.toLowerCase().includes(qq));
+
+  if (!evs.length && !people.length && !places.length && !kinds.length) {
+    return `<div class="empty s-empty">
+      <div class="empty-ic">${icon('search')}</div>
+      <h3>No results for “${esc(q)}”</h3>
+      <p>Try a name, a place, or a word from a moment.</p>
+    </div>`;
+  }
+
+  let i = 0;
+  return `
+  ${evs.length ? `<div class="s-sec" style="--s:0">
+    <button class="btn tint wide" data-act="search-apply">${icon('clock')} Show ${evs.length} ${evs.length === 1 ? 'moment' : 'moments'} in Timeline</button>
+  </div>` : ''}
+  ${people.length ? `<div class="s-sec" style="--s:1">
+    <h4>People</h4>
+    <div class="chipwrap">${people.map(p => `<button class="chip pchip" data-act="person-sheet" data-v="${esc(p.name)}">${avatar(p.name, 'xs')}<span>${hi(p.name, q)}</span><b>${p.count}</b></button>`).join('')}</div>
+  </div>` : ''}
+  ${places.length ? `<div class="s-sec" style="--s:2">
+    <h4>Places</h4>
+    <div class="chipwrap">${places.map(p => `<button class="chip lchip" data-act="fplace-go" data-v="${esc(p.name)}">${icon('pin')}<span>${hi(p.name, q)}</span><b>${p.count}</b></button>`).join('')}</div>
+  </div>` : ''}
+  ${kinds.length ? `<div class="s-sec" style="--s:2">
+    <h4>Kinds</h4>
+    <div class="chipwrap">${kinds.map(t => `<button class="chip tchip" style="--tc:${typeVar(t)}" data-act="ftype-go" data-v="${esc(t)}">${typeIcon(t)}<span>${hi(t, q)}</span></button>`).join('')}</div>
+  </div>` : ''}
+  ${evs.length ? `<div class="s-sec" style="--s:3">
+    <h4>Moments</h4>
+    ${evs.slice(0, 40).map(e => `
+    <button class="s-row" style="--i:${i++}" data-act="event-sheet" data-v="${e.id}">
+      <span class="mini-dot" style="--tc:${typeVar(e.type)}"></span>
+      <span class="s-main">
+        <b>${hi(e.note.length > 110 ? e.note.slice(0, 110) + '…' : e.note, q)}</b>
+        <small>${esc(e.when.label)}${e.person ? ` · ${esc(e.person)}` : ''}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+      </span>
+      ${icon('chevron', 'chev')}
+    </button>`).join('')}
+    ${evs.length > 40 ? `<p class="g-note">Showing 40 of ${evs.length} — keep typing to narrow down</p>` : ''}
+  </div>` : ''}`;
+}
+
+let sTimer = null;
+function renderSearchBody() {
+  const body = $('#s-body');
+  if (body) body.innerHTML = searchBodyHTML();
+}
+function openSearch() {
+  if (searchOpen) return;
+  searchOpen = true;
+  sQuery = state.q;
+  const root = $('#search-root');
+  root.innerHTML = `
+  <div class="s-panel">
+    <div class="s-head">
+      <label class="searchwrap s-input">${icon('search')}
+        <input id="sq" type="search" placeholder="Search moments, people, places" value="${esc(sQuery)}" autocomplete="off" enterkeyhint="search">
+      </label>
+      <button class="s-cancel" data-act="close-search">Cancel</button>
+    </div>
+    <div class="s-body" id="s-body">${searchBodyHTML()}</div>
+  </div>`;
+  document.body.classList.add('searching');
+  const input = $('#sq');
+  input.addEventListener('input', () => {
+    clearTimeout(sTimer);
+    sTimer = setTimeout(() => { sQuery = input.value; renderSearchBody(); }, 110);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.classList.add('open');
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+  }));
+}
+function closeSearch() {
+  if (!searchOpen) return;
+  searchOpen = false;
+  const root = $('#search-root');
+  root.classList.remove('open');
+  document.body.classList.remove('searching');
+  setTimeout(() => { if (!searchOpen) root.innerHTML = ''; }, 380);
+}
+function applySearch() {
+  state.q = sQuery.trim();
+  saveRecent(state.q);
+  closeSearch();
+  if (state.view !== 'timeline') { state.view = 'timeline'; }
+  render();
+}
+
 /* ── toast ─────────────────────────────────────────────────── */
 let toastTimer = null;
 function toast(msg) {
@@ -1008,15 +1145,6 @@ function toast(msg) {
 }
 
 /* ── interactions ──────────────────────────────────────────── */
-let searchTimer = null;
-function onSearch(e) {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.q = e.target.value;
-    refreshTimelineContent();
-  }, 120);
-}
-
 const toggle = (set, v) => set.has(v) ? set.delete(v) : set.add(v);
 
 function goTimeline() {
@@ -1024,6 +1152,7 @@ function goTimeline() {
   state.view = 'timeline';
   state.scroll.timeline = 0;
   closeSheet();
+  closeSearch();
   render({ dir, restoreScroll: false });
 }
 
@@ -1070,6 +1199,23 @@ document.addEventListener('click', e => {
     case 'gcompare': toggle(state.compare, v); softRender(); break;
     case 'cmp-clear': state.compare.clear(); softRender(); break;
 
+    case 'open-search': openSearch(); break;
+    case 'close-search': closeSearch(); break;
+    case 'search-apply': applySearch(); break;
+    case 'search-sugg': {
+      sQuery = v;
+      const input = $('#sq');
+      if (input) { input.value = v; input.focus({ preventScroll: true }); }
+      renderSearchBody();
+      break;
+    }
+    case 'search-clear-recents': localStorage.removeItem(LS_RECENTS); renderSearchBody(); break;
+    case 'search-random': {
+      const evs = state.events;
+      if (evs.length) eventSheet(evs[Math.floor(Math.random() * evs.length)].id);
+      break;
+    }
+
     case 'ftype':  toggle(state.types, v);  sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
     case 'fperson': toggle(state.people, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
     case 'fplace': toggle(state.places, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
@@ -1113,8 +1259,12 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && sheetOpen) closeSheet();
+  if (e.key === 'Escape') {
+    if (sheetOpen) closeSheet();
+    else if (searchOpen) closeSearch();
+  }
   if (e.key === 'Enter' && e.target.id === 'sheet-url') $('[data-act="sheet-connect"]')?.click();
+  if (e.key === 'Enter' && e.target.id === 'sq') applySearch();
 });
 
 /* compact top bar on scroll */
