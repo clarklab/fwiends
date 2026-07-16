@@ -27,6 +27,15 @@ Open `index.html` (or serve the folder) and it runs.
     first time are marked with a ✨ everywhere — cards, detail sheets, and
     the chart.
 
+  **Presentation mode** (the ⤢ button): a full-screen, big-type walkthrough
+  built for desktops and TVs — the chrome disappears and each moment becomes
+  a slide with a type-tinted glow, giant balanced headline, first-meeting
+  callouts, and the people fading in one by one, with mega year interstitials
+  between years. Navigate with arrow keys / space, the edge click zones, or
+  the on-screen arrows; `P` or the play button auto-advances every 7 seconds;
+  controls hide when idle; Esc exits. It presents whatever the current
+  filters select, so "just 2015" or "just Melissa" works as a show.
+
   Filters live on one line: **Year**, **Person**, and **Kind** pickers, each
   opening a native-style bottom sheet with counts and checkmarks
   (multi-select). Scope (Pod/Self) and Places live behind the sliders
