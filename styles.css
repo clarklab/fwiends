@@ -81,6 +81,7 @@ body {
   text-rendering: optimizeLegibility;
   overscroll-behavior-y: none;
   min-height: 100dvh;
+  overflow-x: clip; /* full-bleed sections may equal 100vw incl. scrollbar */
 }
 body.locked { overflow: hidden; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -950,4 +951,73 @@ html[data-dir="fade"]::view-transition-old(root) { animation: vt-out-fade .26s e
   .rail { padding-left: 32px; }
   .rail::before { left: 10px; }
   .raildot { left: -27px; }
+}
+
+/* ── desktop: use the whole canvas ── */
+@media (min-width: 900px) {
+  #main {
+    max-width: 1360px;
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+  .lhead { padding-top: 44px; }
+  .lrow h1 { font-size: 46px; }
+  .tagline { font-size: 19px; max-width: 46ch; }
+  .sub { font-size: 16px; }
+
+  /* keep the controls tidy rather than stretched */
+  .searchwrap, .searchwrap.faux { max-width: 880px; }
+  .pickerrow { max-width: 880px; }
+  .picker { flex: 0 1 236px; }
+
+  /* list layout: two readable columns, no rail line */
+  .tl-content:not(.tl-h) .rail {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 20px; align-items: start;
+    padding-left: 0; padding-bottom: 46px;
+  }
+  .tl-content:not(.tl-h) .rail::before { display: none; }
+  .tl-content:not(.tl-h) .raildot { display: none; }
+  .ev { padding: 22px 24px 19px; }
+  .ev-note { font-size: 16.5px; }
+
+  /* flow layout: full-bleed carousel with bigger cards */
+  .tl-h .hrail {
+    margin-inline: calc(50% - 50vw);
+    padding-inline: calc(50vw - 50% + 4px);
+    scroll-padding-left: calc(50vw - 50% + 4px);
+    gap: 20px; padding-top: 34px; padding-bottom: 48px;
+  }
+  .tl-h .ev { width: 390px; }
+  .hitem { padding-top: 38px; }
+  .hitem::before { top: 17px; left: -22px; right: -22px; }
+  .ymark { min-width: 96px; }
+  .ymark h2 { font-size: 32px; }
+
+  /* overlap chart breathes */
+  .g-name { width: 168px; font-size: 13px; }
+  .g-row { }
+  .g-year { font-size: 13px; }
+
+  /* people: bigger cells */
+  .pgrid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+  .pcard { padding-top: 30px; }
+
+  /* places: two columns */
+  .plist { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .prow-main .meter { max-width: none; }
+
+  /* insights: tiles in one row, panels in two columns */
+  .v-insights { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; align-items: start; }
+  .v-insights .lhead, .v-insights .tiles { grid-column: 1 / -1; }
+  .tiles { grid-template-columns: repeat(4, 1fr); }
+  .tile b { font-size: 40px; }
+  .ybars { height: 190px; }
+}
+
+/* very large screens / TVs */
+@media (min-width: 1600px) {
+  #main { max-width: 1520px; }
+  .tl-content:not(.tl-h) .rail { grid-template-columns: repeat(3, 1fr); }
+  .tl-h .ev { width: 420px; }
 }
