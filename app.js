@@ -1169,7 +1169,6 @@ function slideHTML(s) {
   const pairs = firstMeets().get(e.id) || [];
   const ppl = [e.person, ...e.rel].filter(Boolean);
   return `<div class="p-slide ev" style="--tc:${typeVar(e.type)}">
-    <div class="p-glow"></div>
     <div class="p-meta">
       <span class="tbadge big">${typeIcon(e.type)}<span>${esc(e.type)}</span></span>
       <span class="p-date">${icon('calendar')}${esc(e.when.label)}</span>
@@ -1188,8 +1187,24 @@ function slideHTML(s) {
 function renderSlide() {
   const wrap = $('#p-slide-wrap');
   if (!wrap) return;
-  wrap.innerHTML = slideHTML(presSlides[presIdx]);
+  const s = presSlides[presIdx];
+  wrap.innerHTML = slideHTML(s);
   wrap.firstElementChild.classList.add(presDir >= 0 ? 'fwd' : 'back');
+
+  // the glow lives on a persistent stage layer, decoupled from the slide's
+  // entrance transform — it cross-morphs color and drifts per slide
+  const bg = $('#p-bg');
+  if (bg) {
+    if (s.kind === 'event') {
+      bg.style.setProperty('--glow', `color-mix(in srgb, ${typeVar(s.e.type)} 18%, transparent)`);
+      bg.style.setProperty('--g1x', `${58 + ((presIdx * 37) % 30)}%`);
+      bg.style.setProperty('--g1y', `${6 + ((presIdx * 23) % 22)}%`);
+      bg.style.setProperty('--g2x', `${4 + ((presIdx * 29) % 26)}%`);
+    } else {
+      bg.style.setProperty('--glow', 'transparent');
+    }
+  }
+
   $('#p-bar').style.width = `${((presIdx + 1) / presSlides.length) * 100}%`;
   $('#p-count').textContent = `${presIdx + 1} / ${presSlides.length}`;
   $('.p-nav.prev')?.classList.toggle('off', presIdx === 0);
@@ -1244,6 +1259,7 @@ function openPresent() {
         <button class="hbtn p-btn" data-act="pres-close" aria-label="Exit presentation">${icon('x')}</button>
       </div>
     </div>
+    <div class="p-bg" id="p-bg" aria-hidden="true"></div>
     <div class="p-zone left" data-act="pres-prev" aria-hidden="true"></div>
     <div class="p-zone right" data-act="pres-next" aria-hidden="true"></div>
     <div id="p-slide-wrap"></div>
