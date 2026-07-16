@@ -17,6 +17,14 @@ Open `index.html` (or serve the folder) and it runs.
   rail runs **vertical or horizontal** — toggle it from the header (the
   choice is remembered); horizontal mode is a snap-scrolling carousel with
   inline year markers.
+- **Overlap** — everyone's individual timeline stacked as rows against one
+  horizontal time axis, project-tracker style: a span bar from each person's
+  first to last moment, and a labeled mini-bar for every moment (title +
+  date/place) so you can skim details without zooming. Overlapping moments
+  lane-stack; names stay pinned while the years scroll; tap a bar for the
+  moment, a name for the person. Moments where two people appear together
+  for the first time are marked with a ✨ everywhere — cards, detail sheets,
+  and the chart.
 - **People** — everyone who appears in the story (as the main person *or* a
   related person), with their span of years and kinds of moments. Tap through
   to their personal timeline.
