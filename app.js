@@ -95,7 +95,7 @@ function parseWhen(d, y, approx) {
 
 /* ── state ─────────────────────────────────────────────────── */
 const VIEWS = ['timeline', 'gantt', 'people', 'places', 'insights'];
-const VIEW_TITLE = { timeline: 'Fwiends', gantt: 'Gantt', people: 'People', places: 'Places', insights: 'Insights' };
+const VIEW_TITLE = { timeline: 'Fwiends', gantt: 'Overlap', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
 const LS_ORIENT = 'podtl.orient';
 
@@ -127,7 +127,8 @@ function buildEvents(raw) {
         person: String(r.person || '').trim(),
         loc: String(r.loc || '').trim(),
         rel, note: String(r.note || '').trim(),
-        sort: (r.y ?? 9999) * 10000 + when.m * 100 + when.day,
+        // month-less moments sort mid-year, like the Overlap chart plots them
+        sort: (r.y ?? 9999) * 10000 + (when.m ? when.m * 100 + when.day : 650),
       };
     })
     .filter(e => e.person || e.note)
@@ -163,6 +164,26 @@ const allPlaces = () => {
   }
   return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 };
+
+/* first meetings: for every pair of people, the earliest moment they share */
+let _meetCache = null, _meetFor = null;
+function firstMeets() {
+  if (_meetFor === state.events) return _meetCache;
+  const seen = new Set(), map = new Map();
+  for (const e of state.events) { // events are chronologically sorted
+    const ppl = [e.person, ...e.rel].filter(Boolean);
+    const pairs = [];
+    for (let i = 0; i < ppl.length; i++) {
+      for (let j = i + 1; j < ppl.length; j++) {
+        const key = [ppl[i], ppl[j]].sort().join('|');
+        if (!seen.has(key)) { seen.add(key); pairs.push([ppl[i], ppl[j]]); }
+      }
+    }
+    if (pairs.length) map.set(e.id, pairs);
+  }
+  _meetFor = state.events; _meetCache = map;
+  return map;
+}
 
 const yearsRange = () => {
   const ys = state.events.map(e => e.year).filter(Boolean);
@@ -202,6 +223,17 @@ const locChip = loc =>
 const scopePill = s => s ? `<span class="scope ${s.toLowerCase()}">${esc(s)}</span>` : '';
 
 /* ── timeline view ─────────────────────────────────────────── */
+function firstsRow(e, cap = 2) {
+  const pairs = firstMeets().get(e.id);
+  if (!pairs) return '';
+  const shown = pairs.slice(0, cap);
+  const more = pairs.length - shown.length;
+  return `<div class="firsts">
+    ${shown.map(([a, b]) => `<span class="fpair">${icon('spark')}${esc(a)} met ${esc(b)}</span>`).join('')}
+    ${more > 0 ? `<span class="fpair more">+${more} more ${more === 1 ? 'first' : 'firsts'}</span>` : ''}
+  </div>`;
+}
+
 function eventCard(e, i) {
   return `
   <article class="card ev" data-act="event-sheet" data-v="${e.id}" style="--tc:${typeVar(e.type)};--i:${i % 8}" tabindex="0">
@@ -211,6 +243,7 @@ function eventCard(e, i) {
       <time>${esc(e.when.label)}</time>
     </header>
     <p class="ev-note">${esc(e.note)}</p>
+    ${firstsRow(e)}
     <div class="tags">
       ${e.person ? personChip(e.person) : ''}
       ${e.rel.map(r => personChip(r, { small: true })).join('')}
@@ -320,7 +353,7 @@ function ganttHTML() {
     return `
     <div class="view v-gantt${state._anim ? ' anim' : ''}">
       <div class="lhead">
-        <div class="lrow"><h1>Gantt</h1>
+        <div class="lrow"><h1>Overlap</h1>
           <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
         </div>
         <p class="sub">Everyone’s timeline, side by side</p>
@@ -328,14 +361,15 @@ function ganttHTML() {
       <div class="empty">
         <div class="empty-ic">${icon('gantt')}</div>
         <h3>Nothing to chart yet</h3>
-        <p>Moments need a year to appear on the Gantt.</p>
+        <p>Moments need a year to appear here.</p>
       </div>
     </div>`;
   }
 
   // fractional-year position; month-less moments sit mid-year
   const fy = e => e.year + (e.when.m ? (e.when.m - 1) / 12 + (e.when.day ? (e.when.day - 1) / 372 : 0.04) : 0.45);
-  const PXY = 150, PADL = 20, PADR = 34;
+  const PXY = 150, PADL = 20, BARW = 172, BARGAP = 6, LANEH = 42, ROWPAD = 14;
+  const PADR = BARW + 26;
   const W = (y1 - y0 + 1) * PXY + PADL + PADR;
   const xOf = e => PADL + (fy(e) - y0) * PXY;
 
@@ -354,7 +388,7 @@ function ganttHTML() {
   return `
   <div class="view v-gantt${state._anim ? ' anim' : ''}">
     <div class="lhead">
-      <div class="lrow"><h1>Gantt</h1>
+      <div class="lrow"><h1>Overlap</h1>
         <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
       </div>
       <p class="sub">Everyone’s timeline, side by side · ${rows.length} people · ${y0}–${y1}</p>
@@ -371,24 +405,33 @@ function ganttHTML() {
           </div>
           ${rows.map(({ p, list }) => {
             const h = hueOf(p.name);
-            let prev = -1e9;
-            const dots = list.map(e => {
-              let xx = xOf(e);
-              if (xx - prev < 13) xx = prev + 13; // fan out same-date collisions
-              prev = xx;
-              return `<button class="g-dot" data-act="event-sheet" data-v="${e.id}"
-                data-tip="${esc(e.when.label)} · ${esc(e.type)}" aria-label="${esc(e.note.slice(0, 60))}"
-                style="left:${Math.round(xx) - 12}px;--tc:${typeVar(e.type)}"><i></i></button>`;
-            }).join('');
-            const xStart = Math.round(xOf(list[0])), xEnd = Math.round(prev);
+            // lane-pack the bars: overlapping events drop to the next lane
+            const laneEnds = [];
+            const placed = list.map(e => {
+              const xx = Math.round(xOf(e));
+              let lane = laneEnds.findIndex(end => xx >= end + BARGAP);
+              if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+              laneEnds[lane] = xx + BARW;
+              return { e, xx, lane };
+            });
+            const rowH = Math.max(laneEnds.length * LANEH + ROWPAD, 54);
+            const bars = placed.map(({ e, xx, lane }) => `
+              <button class="g-bar" data-act="event-sheet" data-v="${e.id}"
+                aria-label="${esc(e.note.slice(0, 80))}"
+                style="left:${xx}px;top:${Math.round(ROWPAD / 2) + lane * LANEH}px;--tc:${typeVar(e.type)}">
+                <b><i></i>${firstMeets().has(e.id) ? icon('spark', 'bspark') : ''}${esc(e.note)}</b>
+                <small>${esc(e.when.label)}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+              </button>`).join('');
+            const xStart = placed[0].xx;
+            const xEnd = Math.max(...placed.map(b => b.xx)) + BARW;
             return `
-            <div class="g-row">
+            <div class="g-row" style="height:${rowH}px">
               <button class="g-name" data-act="person-sheet" data-v="${esc(p.name)}">
                 ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>
               </button>
               <div class="g-track" style="width:${W}px;--gx:${PADL}px;--gpy:${PXY}px">
-                <i class="g-span" style="left:${xStart}px;width:${Math.max(xEnd - xStart, 8)}px;background:hsl(${h} 62% 50% / .16);border-color:hsl(${h} 62% 50% / .3)"></i>
-                ${dots}
+                <i class="g-span" style="left:${xStart}px;width:${Math.min(xEnd - xStart, W - xStart - 8)}px;background:hsl(${h} 62% 50% / .14)"></i>
+                ${bars}
               </div>
             </div>`;
           }).join('')}
@@ -670,6 +713,12 @@ function eventSheet(id) {
       <div class="tags">
         ${e.person ? personChip(e.person) : ''}
         ${e.rel.map(r => personChip(r)).join('')}
+      </div>` : ''}
+      ${firstMeets().has(e.id) ? `
+      <h4>Firsts</h4>
+      <div class="kv">
+        ${firstMeets().get(e.id).map(([a, b]) => `
+          <div class="kvrow spark">${icon('spark')}<span>First moment with ${esc(a)} and ${esc(b)} together</span></div>`).join('')}
       </div>` : ''}
       <div class="sheet-actions">
         ${e.person ? `<button class="btn tint" data-act="fperson-go" data-v="${esc(e.person)}">${icon('clock')} ${esc(e.person.split(' ')[0])}’s timeline</button>` : ''}
