@@ -289,6 +289,7 @@ function timelineHTML() {
           <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="Filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
       </div>
+      <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables</p>
       <p class="sub">The Pod’s timeline · ${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
       <label class="searchwrap">${icon('search')}<input id="q" type="search" placeholder="Search moments, people, places" value="${esc(state.q)}" autocomplete="off">${state.q ? `<button class="clearq" data-act="clear-q" aria-label="Clear search">${icon('x')}</button>` : ''}</label>
       <div class="chiprow">
