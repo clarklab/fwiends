@@ -17,7 +17,6 @@ const ICONS = {
   users:    '<path d="M16.5 21v-2a4 4 0 0 0-4-4h-6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M21.5 21v-2a4 4 0 0 0-3-3.87"/><path d="M15.5 3.13a4 4 0 0 1 0 7.75"/>',
   pin:      '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
   chart:    '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
-  gear:     '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   sliders:  '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   search:   '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   x:        '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
@@ -70,6 +69,10 @@ const avatar = (name, cls = '') => {
   return `<span class="avatar ${cls}" style="background:linear-gradient(135deg, hsl(${h} 72% 58%), hsl(${(h + 24) % 360} 72% 42%))">${esc(initials(name))}</span>`;
 };
 
+/* animated additive-filter checkbox */
+const checkbox = (on, cls = '') =>
+  `<span class="cbx${cls ? ' ' + cls : ''}${on ? ' on' : ''}" aria-hidden="true">${icon('check')}</span>`;
+
 /* ── dates ─────────────────────────────────────────────────── */
 const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 const MON_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -107,7 +110,6 @@ const state = {
   mode: ['list', 'flow', 'overlap'].includes(localStorage.getItem(LS_MODE))
     ? localStorage.getItem(LS_MODE)
     : (localStorage.getItem('podtl.orient') === 'h' ? 'flow' : 'list'),
-  compare: new Set(),
   _anim: false,
   q: '',
   types: new Set(),
@@ -305,6 +307,7 @@ function pickerLabels() {
 
 function pickerRow() {
   const L = pickerLabels();
+  const more = state.places.size + (state.scope ? 1 : 0);
   const btn = (kind, ic, label, on) => `
     <button class="picker${on ? ' on' : ''}" data-act="pick" data-k="${kind}">
       ${icon(ic)}<span>${esc(label)}</span>${icon('chevdown', 'pchev')}
@@ -313,6 +316,8 @@ function pickerRow() {
     ${btn('year', 'calendar', L.year, state.years.size)}
     ${btn('person', 'users', L.person, state.people.size)}
     ${btn('kind', 'spark', L.kind, state.types.size)}
+    <button class="picker pmore${more ? ' on' : ''}" data-act="filter-sheet" aria-label="More filters">${icon('sliders')}</button>
+    ${filterCount() || state.q ? `<button class="picker pclear" data-act="clear-filters" aria-label="Clear all filters">${icon('x')}</button>` : ''}
   </div>`;
 }
 
@@ -320,7 +325,6 @@ function timelineHTML() {
   const evs = filtered();
   const [y0, y1] = yearsRange();
   const total = state.events.length;
-  const fc = filterCount();
 
   return `
   <div class="view v-timeline${state._anim ? ' anim' : ''}">
@@ -336,11 +340,9 @@ function timelineHTML() {
               <button class="seg-ic${state.mode === m ? ' on' : ''}" data-act="set-mode" data-v="${m}"
                 aria-label="${m === 'list' ? 'Vertical timeline' : m === 'flow' ? 'Horizontal timeline' : 'Overlap chart'}">${icon(ic)}</button>`).join('')}
           </div>
-          <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
-          <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="More filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
       </div>
-      <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables</p>
+      <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables<sup class="tm">™</sup></p>
       <p class="sub">The Pod’s timeline · ${evs.length === total ? total : evs.length + ' of ' + total} moments${y0 ? ` · ${y0}–${y1}` : ''}${state.src.kind === 'sheet' ? ' · synced' : ''}</p>
       <button class="searchwrap faux" data-act="open-search">
         ${icon('search')}<span class="${state.q ? 'qtext' : 'ph'}">${esc(state.q || 'Search moments, people, places')}</span>
@@ -406,30 +408,32 @@ function overlapPanelHTML(evs) {
   const years = [];
   for (let y = y0; y <= y1; y++) years.push(y);
 
+  const checked = state.people;
   const rows = allPeople()
     .map(p => ({ p, list: dated.filter(e => e.person === p.name || e.rel.includes(p.name)).sort((a, b) => gfy(a) - gfy(b)) }))
     .filter(r => r.list.length)
     .sort((a, b) => gfy(a.list[0]) - gfy(b.list[0]));
 
-  const sel = rows.filter(r => state.compare.has(r.p.name));
+  // only the names checked show below; nothing checked = everyone
+  const sel = rows.filter(r => checked.has(r.p.name));
+  const shown = checked.size ? sel : rows;
   const comparing = sel.length >= 2;
   const legend = TYPE_ORDER.filter(t => dated.some(e => e.type === t));
 
   const tray = `
   <div class="cmp-tray">
-    <span class="cmp-label">${icon('users')} Compare</span>
-    ${rows.map(({ p }) => `
-      <button class="chip cchip${state.compare.has(p.name) ? ' on' : ''}" data-act="gcompare" data-v="${esc(p.name)}"
-        style="--pc:hsl(${hueOf(p.name)} 65% 48%)">
-        ${avatar(p.name, 'xs')}<span>${esc(p.name.split(' ')[0])}</span></button>`).join('')}
-    ${state.compare.size ? `<button class="chip clear" data-act="cmp-clear">Clear</button>` : ''}
+    <span class="cmp-label">${icon('users')} People</span>
+    ${allPeople().map(p => `
+      <button class="chip cchip${checked.has(p.name) ? ' on' : ''}" data-act="fperson" data-v="${esc(p.name)}">
+        ${checkbox(checked.has(p.name), 'sm')}${avatar(p.name, 'xs')}<span>${esc(p.name.split(' ')[0])}</span></button>`).join('')}
+    ${checked.size ? `<button class="chip clear" data-act="people-clear">Clear</button>` : ''}
   </div>
-  ${state.compare.size === 1 ? `<p class="cmp-hint">Pick one more person to overlap their timelines</p>` : ''}`;
+  ${checked.size === 1 ? `<p class="cmp-hint">Check one more name to see their timelines overlap</p>` : ''}`;
 
-  let body;
+  // with 2+ people checked, a combined lane shows their timelines overlapping
+  // in the same space — translucent person-hue bars reveal shared stretches
+  let together = '';
   if (comparing) {
-    // each person lane-packs from lane 0 in the SAME space; translucent
-    // person-hue bars make shared stretches visibly overlap
     let maxLanes = 1;
     const layers = sel.map(({ p, list }) => {
       const { placed, lanes } = lanePack(list, xOf);
@@ -438,44 +442,43 @@ function overlapPanelHTML(evs) {
       return placed.map(b => gBar(b, `--pc:hsl(${h} 68% 48%);--pcs:hsl(${h} 68% 42%)`)).join('');
     }).join('');
     const H = maxLanes * GX.LANEH + GX.ROWPAD + 6;
-    body = `
+    together = `
     <div class="g-row g-cmp" style="height:${H}px">
       <div class="g-name g-cmpname">${sel.map(({ p }) => avatar(p.name, 'xs stack')).join('')}<span>Together</span></div>
       <div class="g-track" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">${layers}</div>
     </div>`;
-  } else {
-    body = rows.map(({ p, list }) => {
-      const h = hueOf(p.name);
-      const { placed, lanes } = lanePack(list, xOf);
-      const rowH = Math.max(lanes * GX.LANEH + GX.ROWPAD, 54);
-      const xStart = placed[0].xx;
-      const xEnd = Math.max(...placed.map(b => b.xx)) + GX.BARW;
-      return `
-      <div class="g-row" style="height:${rowH}px">
-        <button class="g-name${state.compare.has(p.name) ? ' sel' : ''}" data-act="gcompare" data-v="${esc(p.name)}">
-          ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>${state.compare.has(p.name) ? icon('check', 'gcheck') : ''}
-        </button>
-        <div class="g-track" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">
-          <i class="g-span" style="left:${xStart}px;width:${Math.min(xEnd - xStart, W - xStart - 8)}px;background:hsl(${h} 62% 50% / .14)"></i>
-          ${placed.map(b => gBar(b)).join('')}
-        </div>
-      </div>`;
-    }).join('');
   }
+
+  const body = together + shown.map(({ p, list }) => {
+    const h = hueOf(p.name);
+    const { placed, lanes } = lanePack(list, xOf);
+    const rowH = Math.max(lanes * GX.LANEH + GX.ROWPAD, 54);
+    const xStart = placed[0].xx;
+    const xEnd = Math.max(...placed.map(b => b.xx)) + GX.BARW;
+    return `
+    <div class="g-row" style="height:${rowH}px">
+      <button class="g-name${checked.has(p.name) ? ' sel' : ''}" data-act="fperson" data-v="${esc(p.name)}">
+        ${checkbox(checked.has(p.name), 'sm')}${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>
+      </button>
+      <div class="g-track" style="width:${W}px;--gx:${GX.PADL}px;--gpy:${GX.PXY}px">
+        <i class="g-span" style="left:${xStart}px;width:${Math.min(xEnd - xStart, W - xStart - 8)}px;background:hsl(${h} 62% 50% / .14)"></i>
+        ${placed.map(b => gBar(b)).join('')}
+      </div>
+    </div>`;
+  }).join('');
 
   return `
   ${tray}
   <div class="card gpanel" style="--i:0">
     <div class="g-scroll">
-      <div class="g-inner" style="width:${W + 138}px">
+      <div class="g-inner" style="width:${W + 150}px">
         ${gAxisRow(years, y0, W)}
         ${body}
       </div>
     </div>
     <div class="g-legend">
-      ${comparing
-        ? sel.map(({ p }) => `<span class="g-leg"><i style="background:hsl(${hueOf(p.name)} 65% 48%)"></i>${esc(p.name)}</span>`).join('')
-        : legend.map(t => `<span class="g-leg"><i style="background:${typeVar(t)}"></i>${esc(t)}</span>`).join('')}
+      ${comparing ? sel.map(({ p }) => `<span class="g-leg"><i style="background:hsl(${hueOf(p.name)} 65% 48%)"></i>${esc(p.name)}</span>`).join('') : ''}
+      ${legend.map(t => `<span class="g-leg"><i style="background:${typeVar(t)}"></i>${esc(t)}</span>`).join('')}
     </div>
   </div>
   ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the chart — no year in the sheet</p>` : ''}`;
@@ -510,16 +513,19 @@ function pickerBody(kind) {
     <div class="fsheet-head"><h2>${title}</h2>
       <button class="btn ghost" data-act="close-sheet">Done</button>
     </div>
+    <p class="opt-hint">Check as many as you like — only checked ones show below.</p>
     <div class="optlist">
       <button class="opt${set.size === 0 ? ' sel' : ''}" data-act="opt-all" data-k="${kind}">
-        <span class="opt-main">${allLabel}</span>${set.size === 0 ? icon('check', 'optcheck') : ''}
+        ${checkbox(set.size === 0)}<span class="opt-main">${allLabel}</span>
       </button>
       ${opts.map(o => `
       <button class="opt${set.has(o.v) ? ' sel' : ''}" data-act="opt" data-k="${kind}" data-v="${esc(o.v)}">
-        ${o.lead}<span class="opt-main">${esc(o.label)}</span><b>${o.count}</b>${set.has(o.v) ? icon('check', 'optcheck') : ''}
+        ${checkbox(set.has(o.v))}${o.lead}<span class="opt-main">${esc(o.label)}</span><b>${o.count}</b>
       </button>`).join('')}
     </div>
-    <p class="opt-count">${n} ${n === 1 ? 'moment' : 'moments'} match</p>
+    <div class="sheet-actions">
+      <button class="btn tint wide" data-act="close-sheet">Show ${n} ${n === 1 ? 'moment' : 'moments'}</button>
+    </div>
   </div>`;
 }
 function pickerSheet(kind) { currentPicker = kind; openSheet(pickerBody(kind), 'picker'); }
@@ -537,9 +543,7 @@ function peopleHTML() {
   return `
   <div class="view v-people${state._anim ? ' anim' : ''}">
     <div class="lhead">
-      <div class="lrow"><h1>People</h1>
-        <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
-      </div>
+      <div class="lrow"><h1>People</h1></div>
       <p class="sub">${people.length} people in the pod’s story</p>
     </div>
     <div class="pgrid">
@@ -566,9 +570,7 @@ function placesHTML() {
   return `
   <div class="view v-places${state._anim ? ' anim' : ''}">
     <div class="lhead">
-      <div class="lrow"><h1>Places</h1>
-        <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
-      </div>
+      <div class="lrow"><h1>Places</h1></div>
       <p class="sub">${places.length} places, one shared map of memories</p>
     </div>
     <div class="plist">
@@ -614,9 +616,7 @@ function insightsHTML() {
   return `
   <div class="view v-insights${state._anim ? ' anim' : ''}">
     <div class="lhead">
-      <div class="lrow"><h1>Insights</h1>
-        <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
-      </div>
+      <div class="lrow"><h1>Insights</h1></div>
       <p class="sub">The pod, by the numbers</p>
     </div>
 
@@ -714,13 +714,26 @@ function render({ dir = 0, restoreScroll = true } = {}) {
 
 /* re-render the current view in place (no view transition, no entrance
    flicker) — used while a sheet is open or for live filter updates */
-function softRender() {
+function softRender({ animate = false } = {}) {
   const y = window.scrollY;
   const main = $('#main');
   main.innerHTML = viewHTML();
   $$('.card', main).forEach(c => { c.classList.add('in'); c.dataset.seen = '1'; });
+  if (animate) $('#tl-content')?.classList.add('swap');
   afterRender();
   window.scrollTo(0, y);
+}
+
+/* every additive filter change funnels through here: the view below updates
+   live with a soft swap animation, and any open sheet stays in sync */
+function filterChanged() {
+  if (sheetOpen) {
+    softRender();
+    refreshPickerSheet();
+    refreshFilterSheet();
+  } else {
+    softRender({ animate: true });
+  }
 }
 
 /* ── sheets (modal bottom sheets) ──────────────────────────── */
@@ -848,10 +861,10 @@ function filterSheetBody() {
       </div>
 
       <h4>Places</h4>
-      <div class="chipwrap">
+      <div class="optlist">
         ${places.map(p => `
-          <button class="chip lchip${state.places.has(p.name) ? ' on' : ''}" data-act="fplace" data-v="${esc(p.name)}">
-            ${icon('pin')}<span>${esc(p.name)}</span><b>${p.count}</b></button>`).join('')}
+          <button class="opt${state.places.has(p.name) ? ' sel' : ''}" data-act="fplace" data-v="${esc(p.name)}">
+            ${checkbox(state.places.has(p.name))}${icon('pin')}<span class="opt-main">${esc(p.name)}</span><b>${p.count}</b></button>`).join('')}
       </div>
 
       <div class="sheet-actions">
@@ -868,41 +881,7 @@ function refreshFilterSheet() {
   body.scrollTop = pos;
 }
 
-/* ── settings sheet ────────────────────────────────────────── */
-function settingsSheet(err = '') {
-  const { kind, url, at } = state.src;
-  openSheet(`
-    <div class="ssheet">
-      <h2>Data source</h2>
-      <div class="srccard card">
-        <span class="srcic">${icon('table')}</span>
-        <div>
-          <b>${kind === 'sheet' ? 'Google Sheet' : 'Sample data'}</b>
-          <small>${kind === 'sheet'
-            ? esc(shortUrl(url)) + (at ? ` · synced ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '')
-            : 'Transcribed from the Pod Timeline photo'}</small>
-        </div>
-        ${kind === 'sheet' ? `<button class="hbtn" data-act="sheet-refresh" aria-label="Refresh">${icon('refresh')}</button>` : ''}
-      </div>
-
-      <h4>Connect a Google Sheet</h4>
-      <p class="hint">The whole app builds itself from one spreadsheet. In Google Sheets choose
-      <b>Share → Anyone with the link</b> (or <b>File → Share → Publish to web → CSV</b>), then paste the link here.
-      Columns: Year · Exact Date · Person · Event Type · Location · Type · Related People · Notes.</p>
-      <div class="urlrow">
-        <input id="sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/…" value="${esc(kind === 'sheet' ? url : '')}" autocomplete="off">
-      </div>
-      ${err ? `<p class="errline">${esc(err)}</p>` : ''}
-      <div class="sheet-actions">
-        <button class="btn tint wide" data-act="sheet-connect">${icon('arrow')} Sync from sheet</button>
-        ${kind === 'sheet' ? `<button class="btn wide" data-act="sheet-sample">Use sample data</button>` : ''}
-      </div>
-      <p class="rowref">Pod Timeline · built for the web, dressed like an app</p>
-    </div>`);
-}
-const shortUrl = u => { try { const x = new URL(u); return x.hostname + x.pathname.slice(0, 26) + '…'; } catch { return u.slice(0, 40); } };
-
-/* ── Google Sheets CSV loading ─────────────────────────────── */
+/* ── Google Sheets CSV loading (source is configured at the repo level) ── */
 function csvUrl(input) {
   const u = String(input || '').trim();
   const pub = u.match(/docs\.google\.com\/spreadsheets\/d\/e\/([^/]+)\/pub/);
@@ -1173,7 +1152,6 @@ document.addEventListener('click', e => {
     }
     case 'event-sheet':  eventSheet(v); break;
     case 'person-sheet': personSheet(v); break;
-    case 'settings-sheet': settingsSheet(); break;
     case 'filter-sheet': filterSheet(); break;
     case 'close-sheet':  closeSheet(); break;
     case 'apply-filters': closeSheet(); if (state.view !== 'timeline') goTimeline(); else render(); break;
@@ -1188,16 +1166,14 @@ document.addEventListener('click', e => {
       break;
 
     case 'pick': pickerSheet(el.dataset.k); break;
-    case 'opt-all': pickerSet(el.dataset.k).clear(); softRender(); refreshPickerSheet(); break;
+    case 'opt-all': pickerSet(el.dataset.k).clear(); filterChanged(); break;
     case 'opt': {
       const k = el.dataset.k;
       toggle(pickerSet(k), k === 'year' ? +v : v);
-      softRender(); refreshPickerSheet();
+      filterChanged();
       break;
     }
-
-    case 'gcompare': toggle(state.compare, v); softRender(); break;
-    case 'cmp-clear': state.compare.clear(); softRender(); break;
+    case 'people-clear': state.people.clear(); filterChanged(); break;
 
     case 'open-search': openSearch(); break;
     case 'close-search': closeSearch(); break;
@@ -1216,11 +1192,11 @@ document.addEventListener('click', e => {
       break;
     }
 
-    case 'ftype':  toggle(state.types, v);  sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
-    case 'fperson': toggle(state.people, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
-    case 'fplace': toggle(state.places, v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
-    case 'fyear':  toggle(state.years, +v || v); sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
-    case 'fscope': state.scope = v; sheetOpen ? (softRender(), refreshFilterSheet()) : render(); break;
+    case 'ftype':  toggle(state.types, v);  filterChanged(); break;
+    case 'fperson': toggle(state.people, v); filterChanged(); break;
+    case 'fplace': toggle(state.places, v); filterChanged(); break;
+    case 'fyear':  toggle(state.years, +v || v); filterChanged(); break;
+    case 'fscope': state.scope = v; filterChanged(); break;
 
     case 'ftype-go':   state.types = new Set([v]); goTimeline(); break;
     case 'fperson-go': state.people = new Set([v]); goTimeline(); break;
@@ -1230,31 +1206,10 @@ document.addEventListener('click', e => {
     case 'clear-filters':
       state.types.clear(); state.people.clear(); state.places.clear();
       state.years.clear(); state.scope = ''; state.q = '';
-      if (sheetOpen) { softRender(); refreshFilterSheet(); refreshPickerSheet(); }
-      else { render(); toast('Filters cleared'); }
+      filterChanged();
+      if (!sheetOpen) toast('Filters cleared');
       break;
     case 'clear-q': state.q = ''; render(); break;
-
-    case 'sheet-connect': {
-      const url = $('#sheet-url')?.value.trim();
-      if (!url) { settingsSheet('Paste a Google Sheets link first.'); break; }
-      el.classList.add('busy');
-      connectSheet(url)
-        .then(() => { closeSheet(); state.view = 'timeline'; render(); })
-        .catch(err => settingsSheet(err.message || 'Couldn’t load that sheet.'));
-      break;
-    }
-    case 'sheet-refresh':
-      connectSheet(state.src.url)
-        .then(() => { closeSheet(); render(); })
-        .catch(err => settingsSheet(err.message || 'Couldn’t refresh.'));
-      break;
-    case 'sheet-sample':
-      localStorage.removeItem(LS_KEY);
-      state.events = buildEvents(window.POD_SEED);
-      state.src = { kind: 'sample', url: '', at: null };
-      closeSheet(); render(); toast('Back to sample data');
-      break;
   }
 });
 
@@ -1263,7 +1218,6 @@ document.addEventListener('keydown', e => {
     if (sheetOpen) closeSheet();
     else if (searchOpen) closeSearch();
   }
-  if (e.key === 'Enter' && e.target.id === 'sheet-url') $('[data-act="sheet-connect"]')?.click();
   if (e.key === 'Enter' && e.target.id === 'sq') applySearch();
 });
 
