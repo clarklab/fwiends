@@ -34,6 +34,7 @@ const ICONS = {
   spark:    '<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9L12 3z"/>',
   table:    '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>',
   rows:     '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
+  gantt:    '<line x1="3" y1="6" x2="12" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="5" y1="18" x2="15" y2="18"/>',
   columns:  '<line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/>',
   dot:      '<circle cx="12" cy="12" r="4"/>',
 };
@@ -93,8 +94,8 @@ function parseWhen(d, y, approx) {
 }
 
 /* ── state ─────────────────────────────────────────────────── */
-const VIEWS = ['timeline', 'people', 'places', 'insights'];
-const VIEW_TITLE = { timeline: 'Fwiends', people: 'People', places: 'Places', insights: 'Insights' };
+const VIEWS = ['timeline', 'gantt', 'people', 'places', 'insights'];
+const VIEW_TITLE = { timeline: 'Fwiends', gantt: 'Gantt', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
 const LS_ORIENT = 'podtl.orient';
 
@@ -309,6 +310,98 @@ function timelineHTML() {
   </div>`;
 }
 
+/* ── gantt view ────────────────────────────────────────────── */
+function ganttHTML() {
+  const dated = state.events.filter(e => e.year);
+  const undated = state.events.length - dated.length;
+  const [y0, y1] = yearsRange();
+
+  if (!dated.length) {
+    return `
+    <div class="view v-gantt${state._anim ? ' anim' : ''}">
+      <div class="lhead">
+        <div class="lrow"><h1>Gantt</h1>
+          <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
+        </div>
+        <p class="sub">Everyone’s timeline, side by side</p>
+      </div>
+      <div class="empty">
+        <div class="empty-ic">${icon('gantt')}</div>
+        <h3>Nothing to chart yet</h3>
+        <p>Moments need a year to appear on the Gantt.</p>
+      </div>
+    </div>`;
+  }
+
+  // fractional-year position; month-less moments sit mid-year
+  const fy = e => e.year + (e.when.m ? (e.when.m - 1) / 12 + (e.when.day ? (e.when.day - 1) / 372 : 0.04) : 0.45);
+  const PXY = 150, PADL = 20, PADR = 34;
+  const W = (y1 - y0 + 1) * PXY + PADL + PADR;
+  const xOf = e => PADL + (fy(e) - y0) * PXY;
+
+  const rows = allPeople()
+    .map(p => ({
+      p,
+      list: dated.filter(e => e.person === p.name || e.rel.includes(p.name)).sort((a, b) => fy(a) - fy(b)),
+    }))
+    .filter(r => r.list.length)
+    .sort((a, b) => fy(a.list[0]) - fy(b.list[0]));
+
+  const years = [];
+  for (let y = y0; y <= y1; y++) years.push(y);
+  const legend = TYPE_ORDER.filter(t => dated.some(e => e.type === t));
+
+  return `
+  <div class="view v-gantt${state._anim ? ' anim' : ''}">
+    <div class="lhead">
+      <div class="lrow"><h1>Gantt</h1>
+        <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
+      </div>
+      <p class="sub">Everyone’s timeline, side by side · ${rows.length} people · ${y0}–${y1}</p>
+    </div>
+
+    <div class="card gpanel" style="--i:0">
+      <div class="g-scroll">
+        <div class="g-inner" style="width:${W + 138}px">
+          <div class="g-row g-axisrow">
+            <div class="g-name g-corner" aria-hidden="true"></div>
+            <div class="g-track g-axistrack" style="width:${W}px;--gx:${PADL}px;--gpy:${PXY}px">
+              ${years.map(yy => `<span class="g-year" style="left:${PADL + (yy - y0) * PXY}px">${yy}</span>`).join('')}
+            </div>
+          </div>
+          ${rows.map(({ p, list }) => {
+            const h = hueOf(p.name);
+            let prev = -1e9;
+            const dots = list.map(e => {
+              let xx = xOf(e);
+              if (xx - prev < 13) xx = prev + 13; // fan out same-date collisions
+              prev = xx;
+              return `<button class="g-dot" data-act="event-sheet" data-v="${e.id}"
+                data-tip="${esc(e.when.label)} · ${esc(e.type)}" aria-label="${esc(e.note.slice(0, 60))}"
+                style="left:${Math.round(xx) - 12}px;--tc:${typeVar(e.type)}"><i></i></button>`;
+            }).join('');
+            const xStart = Math.round(xOf(list[0])), xEnd = Math.round(prev);
+            return `
+            <div class="g-row">
+              <button class="g-name" data-act="person-sheet" data-v="${esc(p.name)}">
+                ${avatar(p.name, 'xs')}<span>${esc(p.name)}</span>
+              </button>
+              <div class="g-track" style="width:${W}px;--gx:${PADL}px;--gpy:${PXY}px">
+                <i class="g-span" style="left:${xStart}px;width:${Math.max(xEnd - xStart, 8)}px;background:hsl(${h} 62% 50% / .16);border-color:hsl(${h} 62% 50% / .3)"></i>
+                ${dots}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="g-legend">
+        ${legend.map(t => `<span class="g-leg"><i style="background:${typeVar(t)}"></i>${esc(t)}</span>`).join('')}
+      </div>
+    </div>
+    ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the chart — they have no year in the sheet</p>` : ''}
+  </div>`;
+}
+
 /* ── people view ───────────────────────────────────────────── */
 function peopleHTML() {
   const people = allPeople();
@@ -445,7 +538,7 @@ function insightsHTML() {
 
 /* ── render machinery ──────────────────────────────────────── */
 const viewHTML = () => ({
-  timeline: timelineHTML, people: peopleHTML, places: placesHTML, insights: insightsHTML,
+  timeline: timelineHTML, gantt: ganttHTML, people: peopleHTML, places: placesHTML, insights: insightsHTML,
 }[state.view]());
 
 let revealIO = null, yearIO = null;

@@ -17,6 +17,11 @@ Open `index.html` (or serve the folder) and it runs.
   rail runs **vertical or horizontal** — toggle it from the header (the
   choice is remembered); horizontal mode is a snap-scrolling carousel with
   inline year markers.
+- **Gantt** — everyone's individual timeline stacked as rows against one
+  horizontal time axis, project-tracker style: a span bar from each person's
+  first to last moment, with type-colored dots for every moment along the
+  way. Names stay pinned while the years scroll; tap a dot for the moment,
+  a name for the person.
 - **People** — everyone who appears in the story (as the main person *or* a
   related person), with their span of years and kinds of moments. Tap through
   to their personal timeline.
