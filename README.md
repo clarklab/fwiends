@@ -9,9 +9,11 @@ Open `index.html` (or serve the folder) and it runs.
 
 ## Views
 
-- **Timeline** — moments grouped by year on a vertical rail, with sticky year
-  headers, a year jumper, search, and type filter chips. Tap a card for the
-  full story.
+- **Timeline** — moments grouped by year, with sticky year headers, a year
+  jumper, search, and type filter chips. Tap a card for the full story. The
+  rail runs **vertical or horizontal** — toggle it from the header (the
+  choice is remembered); horizontal mode is a snap-scrolling carousel with
+  inline year markers.
 - **People** — everyone who appears in the story (as the main person *or* a
   related person), with their span of years and kinds of moments. Tap through
   to their personal timeline.
@@ -52,6 +54,9 @@ The URL is remembered locally and re-synced on every launch. Notes:
 - SF Pro Display via CDN with the system font stack as fallback; large-title
   navigation, frosted-glass bars, bottom tab bar, spring animations, and the
   View Transitions API for tab changes (with graceful fallback).
+- Ephemeral motion: cards drift in when they enter the viewport and dissolve
+  as they leave (both scroll directions), headers cascade on view entry, and
+  sheet content staggers in behind the sheet's slide.
 - Light and dark mode follow the system.
 - The seven event-type colors are a CVD-validated categorical palette (order:
   Core, Meeting, Move, Romance, Friendship, Relationship, Work), separately

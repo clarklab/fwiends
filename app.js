@@ -33,6 +33,8 @@ const ICONS = {
   link:     '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   spark:    '<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9L12 3z"/>',
   table:    '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>',
+  rows:     '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
+  columns:  '<line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/>',
   dot:      '<circle cx="12" cy="12" r="4"/>',
 };
 const icon = (n, cls = '') =>
@@ -94,9 +96,12 @@ function parseWhen(d, y, approx) {
 const VIEWS = ['timeline', 'people', 'places', 'insights'];
 const VIEW_TITLE = { timeline: 'Timeline', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
+const LS_ORIENT = 'podtl.orient';
 
 const state = {
   view: 'timeline',
+  orient: localStorage.getItem(LS_ORIENT) === 'h' ? 'h' : 'v',
+  _anim: false,
   q: '',
   types: new Set(),
   people: new Set(),
@@ -230,6 +235,14 @@ function timelineGroupsHTML() {
     (groups.get(k) || groups.set(k, []).get(k)).push(e);
   }
   let i = 0;
+  if (state.orient === 'h') {
+    return `<div class="hrail" id="hrail">${[...groups.entries()].map(([year, list]) => `
+      <div class="hitem ymark" id="yg-${year}" data-year="${year}">
+        <h2>${year}</h2><span>${list.length} ${list.length === 1 ? 'moment' : 'moments'}</span>
+      </div>
+      ${list.map(e => `<div class="hitem">${eventCard(e, i++)}</div>`).join('')}`).join('')}
+    </div>`;
+  }
   return [...groups.entries()].map(([year, list]) => `
     <section class="ygroup" id="yg-${year}" data-year="${year}">
       <div class="yhead"><h2>${year}</h2><span>${list.length} ${list.length === 1 ? 'moment' : 'moments'}</span></div>
@@ -263,11 +276,12 @@ function timelineHTML() {
   const fc = filterCount();
 
   return `
-  <div class="view v-timeline">
+  <div class="view v-timeline${state._anim ? ' anim' : ''}">
     <div class="lhead">
       <div class="lrow">
         <h1>Timeline</h1>
         <div class="hbtns">
+          <button class="hbtn" data-act="toggle-orient" aria-label="Switch to ${state.orient === 'h' ? 'vertical' : 'horizontal'} timeline">${icon(state.orient === 'h' ? 'rows' : 'columns')}</button>
           <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
           <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="Filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
@@ -282,7 +296,7 @@ function timelineHTML() {
         `<button class="chip ypill" data-act="jump-year" data-v="${y}">${y}</button>`).join('')}</div>` : ''}
       ${activeFilterChips()}
     </div>
-    <div id="tl-content" class="tl-content">${timelineGroupsHTML()}</div>
+    <div id="tl-content" class="tl-content${state.orient === 'h' ? ' tl-h' : ''}">${timelineGroupsHTML()}</div>
   </div>`;
 }
 
@@ -290,7 +304,7 @@ function timelineHTML() {
 function peopleHTML() {
   const people = allPeople();
   return `
-  <div class="view v-people">
+  <div class="view v-people${state._anim ? ' anim' : ''}">
     <div class="lhead">
       <div class="lrow"><h1>People</h1>
         <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
@@ -319,7 +333,7 @@ function placesHTML() {
   const places = allPlaces();
   const max = Math.max(...places.map(p => p.count), 1);
   return `
-  <div class="view v-places">
+  <div class="view v-places${state._anim ? ' anim' : ''}">
     <div class="lhead">
       <div class="lrow"><h1>Places</h1>
         <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
@@ -367,7 +381,7 @@ function insightsHTML() {
   const maxTop = Math.max(...top.map(p => p.count), 1);
 
   return `
-  <div class="view v-insights">
+  <div class="view v-insights${state._anim ? ' anim' : ''}">
     <div class="lhead">
       <div class="lrow"><h1>Insights</h1>
         <div class="hbtns"><button class="hbtn" data-act="settings-sheet" aria-label="Settings">${icon('gear')}</button></div>
@@ -435,14 +449,28 @@ function afterRender() {
   if (q) q.addEventListener('input', onSearch);
 
   revealIO?.disconnect();
+  // Ambient reveal: cards drift in when they enter the viewport and slip
+  // away again when they leave — in both scroll directions. The stagger
+  // delay applies only to a card's very first appearance.
   revealIO = new IntersectionObserver(entries => {
-    for (const en of entries) if (en.isIntersecting) { en.target.classList.add('in'); revealIO.unobserve(en.target); }
-  }, { rootMargin: '0px 0px -8% 0px' });
+    for (const en of entries) {
+      const el = en.target;
+      if (en.isIntersecting) {
+        if (!el.dataset.seen) {
+          el.dataset.seen = '1';
+          const i = +el.style.getPropertyValue('--i') || 0;
+          el.style.transitionDelay = i * 30 + 'ms';
+          setTimeout(() => { el.style.transitionDelay = ''; }, 720);
+        }
+        el.classList.add('in');
+      } else el.classList.remove('in');
+    }
+  }, { rootMargin: '4% 3% -5% 3%' });
   $$('.card').forEach(c => revealIO.observe(c));
 
   yearIO?.disconnect();
-  const groups = $$('.ygroup');
-  if (groups.length) {
+  const marks = $$('.ygroup, .ymark');
+  if (marks.length) {
     yearIO = new IntersectionObserver(entries => {
       for (const en of entries) {
         if (en.isIntersecting) {
@@ -450,8 +478,10 @@ function afterRender() {
           $$('.ypill').forEach(p => p.classList.toggle('on', p.dataset.v === y));
         }
       }
-    }, { rootMargin: '-25% 0px -65% 0px' });
-    groups.forEach(g => yearIO.observe(g));
+    }, state.orient === 'h' && $('#hrail')
+      ? { root: $('#hrail'), rootMargin: '0px -55% 0px -5%' }
+      : { rootMargin: '-25% 0px -65% 0px' });
+    marks.forEach(g => yearIO.observe(g));
   }
 }
 
@@ -459,6 +489,7 @@ function render({ dir = 0, restoreScroll = true } = {}) {
   const main = $('#main');
   const doIt = () => {
     main.innerHTML = viewHTML();
+    state._anim = false;
     afterRender();
     if (restoreScroll) window.scrollTo({ top: state.scroll[state.view] || 0 });
   };
@@ -798,9 +829,16 @@ document.addEventListener('click', e => {
       state.scroll[state.view] = window.scrollY;
       const dir = VIEWS.indexOf(v) - VIEWS.indexOf(state.view);
       state.view = v;
+      state._anim = true;
       render({ dir });
       break;
     }
+    case 'toggle-orient':
+      state.orient = state.orient === 'h' ? 'v' : 'h';
+      localStorage.setItem(LS_ORIENT, state.orient);
+      state._anim = true;
+      render({ restoreScroll: false });
+      break;
     case 'event-sheet':  eventSheet(v); break;
     case 'person-sheet': personSheet(v); break;
     case 'settings-sheet': settingsSheet(); break;
@@ -830,7 +868,9 @@ document.addEventListener('click', e => {
 
     case 'jump-year': {
       const sec = $(`#yg-${v}`);
-      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (sec) sec.scrollIntoView(state.orient === 'h'
+        ? { behavior: 'smooth', block: 'nearest', inline: 'start' }
+        : { behavior: 'smooth', block: 'start' });
       break;
     }
 
@@ -870,6 +910,7 @@ addEventListener('scroll', () => {
 /* ── boot ──────────────────────────────────────────────────── */
 async function boot() {
   state.events = buildEvents(window.POD_SEED);
+  state._anim = true;
   render();
   const saved = localStorage.getItem(LS_KEY);
   if (saved) {
