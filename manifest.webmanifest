@@ -1,0 +1,18 @@
+{
+  "name": "Fwiends — an oral history of The Pod",
+  "short_name": "Fwiends",
+  "description": "An oral history of The Pod by Tommy Tables. People, places, and moments on one smooth timeline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F2F2F7",
+  "theme_color": "#3A36E0",
+  "icons": [
+    {
+      "src": "/touch-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,4 +1,7 @@
-# Pod Timeline
+# Fwiends
+
+**An oral history of The Pod by Tommy Tables** — live at
+[fwiends.superfun.games](https://fwiends.superfun.games/).
 
 A spreadsheet-backed, iOS-flavored web app for the pod's shared history — every
 moment of how the friends met, moved, worked, and fell in love, on one smooth
