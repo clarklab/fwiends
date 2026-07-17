@@ -1,0 +1,191 @@
+/* ============================================================
+   Fwiends archivist widget — styled on the app's own tokens
+   (var(--card), var(--ink), --spring, …) so it belongs here.
+   ============================================================ */
+
+/* floating bubble, tucked above the tab bar */
+.aiw-anchor {
+  position: fixed;
+  right: 18px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
+  z-index: 52;
+}
+body.presenting .aiw-anchor,
+body.viewing .aiw-anchor,
+body.searching .aiw-anchor { opacity: 0; pointer-events: none; }
+.aiw-anchor { transition: opacity 0.25s ease; }
+
+.aiw-bubble {
+  width: 54px; height: 54px; border-radius: 50%;
+  border: 0; cursor: pointer;
+  background: var(--tint);
+  color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--tint) 42%, transparent), var(--shadow);
+  display: grid; place-items: center;
+  transition: transform 0.2s var(--pop, cubic-bezier(0.34, 1.4, 0.44, 1)), box-shadow 0.2s;
+}
+.aiw-bubble:hover { transform: scale(1.06); }
+.aiw-bubble:active { transform: scale(0.92); }
+.aiw-bubble[data-state='open'] { transform: rotate(90deg) scale(0.96); }
+.aiw-bubble-ic { width: 26px; height: 26px; }
+
+/* the panel */
+.aiw-panel {
+  z-index: 58;
+  width: min(400px, calc(100vw - 24px));
+  height: min(560px, calc(100dvh - 170px));
+  display: flex; flex-direction: column;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  backdrop-filter: blur(30px) saturate(170%);
+  box-shadow: 0 0 0 0.5px var(--sep), var(--shadow-lift);
+  overflow: hidden;
+  transform-origin: var(--radix-popper-transform-origin, bottom right);
+}
+.aiw-panel[data-state='open'] { animation: aiw-in 0.34s var(--pop, cubic-bezier(0.34, 1.4, 0.44, 1)); }
+.aiw-panel[data-state='closed'] { animation: aiw-out 0.18s ease forwards; }
+@keyframes aiw-in { from { opacity: 0; transform: scale(0.86) translateY(10px); } }
+@keyframes aiw-out { to { opacity: 0; transform: scale(0.92) translateY(8px); } }
+
+.aiw-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 0.5px solid var(--sep);
+}
+.aiw-head-ic {
+  width: 34px; height: 34px; border-radius: 11px;
+  background: var(--tint); color: #fff;
+  display: grid; place-items: center; flex: none;
+}
+.aiw-head-ic svg { width: 18px; height: 18px; }
+.aiw-head-txt b { display: block; font-size: 15px; font-weight: 700; letter-spacing: -0.2px; color: var(--ink); }
+.aiw-head-txt small { font-size: 11.5px; color: var(--ink2); }
+
+/* thread */
+.aiw-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aiw-viewport {
+  flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding: 14px 14px 6px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.aiw-welcome { padding: 8px 4px; }
+.aiw-welcome p { font-size: 14px; color: var(--ink2); margin: 0 0 12px; line-height: 1.45; }
+.aiw-suggs { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.aiw-sugg {
+  border: 0; cursor: pointer;
+  background: var(--card); color: var(--ink);
+  font: inherit; font-size: 13px; font-weight: 590; letter-spacing: -0.1px;
+  padding: 8px 13px; border-radius: 999px;
+  box-shadow: var(--shadow);
+  transition: transform 0.16s var(--pop, ease);
+  text-align: left;
+}
+.aiw-sugg:hover { transform: translateY(-1px); }
+.aiw-sugg:active { transform: scale(0.95); }
+
+/* messages */
+.aiw-msg { display: flex; flex-direction: column; }
+.aiw-msg-user { align-items: flex-end; }
+.aiw-msg-assistant { align-items: stretch; }
+.aiw-user-bubble {
+  max-width: 82%;
+  background: var(--tint); color: #fff;
+  padding: 8px 13px; border-radius: 18px 18px 5px 18px;
+  font-size: 14px; letter-spacing: -0.1px; line-height: 1.4;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* answer cards */
+.aiw-card {
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  animation: aiw-rise 0.45s var(--spring, cubic-bezier(0.32, 0.72, 0, 1)) backwards;
+}
+@keyframes aiw-rise { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+.aiw-answer { margin: 0; font-size: 14.5px; font-weight: 570; letter-spacing: -0.15px; line-height: 1.45; color: var(--ink); }
+.aiw-detail { margin: 7px 0 0; font-size: 12.5px; color: var(--ink2); line-height: 1.45; }
+
+.aiw-big {
+  font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+  color: var(--ink); margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.aiw-big-year { font-size: 56px; }
+.aiw-big-number { font-size: 50px; display: flex; align-items: baseline; gap: 8px; }
+.aiw-unit { font-size: 16px; font-weight: 650; color: var(--ink2); letter-spacing: -0.2px; }
+.aiw-big-place { font-size: 24px; display: flex; align-items: center; gap: 9px; letter-spacing: -0.4px; }
+.aiw-big-place svg { width: 24px; height: 24px; color: var(--tint-ink); flex: none; }
+
+/* people answers: hedcut faces, tappable */
+.aiw-faces { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.aiw-face {
+  border: 0; background: none; padding: 4px; cursor: pointer; font: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  border-radius: 14px;
+  transition: transform 0.18s var(--pop, ease);
+}
+.aiw-face:hover { transform: translateY(-2px); }
+.aiw-face:active { transform: scale(0.93); }
+.aiw-face-hed, .aiw-face-fallback {
+  width: 58px; height: 58px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center;
+}
+.aiw-face-hed img {
+  width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%;
+  display: block; mix-blend-mode: multiply;
+}
+@media (prefers-color-scheme: dark) {
+  .aiw-face-hed img { filter: invert(1); mix-blend-mode: screen; }
+}
+.aiw-face-fallback { color: #fff; font-size: 19px; font-weight: 700; }
+.aiw-face-name { font-size: 12px; font-weight: 650; color: var(--ink2); letter-spacing: -0.1px; }
+
+/* thinking + error */
+.aiw-thinking {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13.5px; color: var(--ink2); font-weight: 550;
+}
+.aiw-dots { display: inline-flex; gap: 4px; }
+.aiw-dots i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--tint);
+  animation: aiw-bounce 1.1s ease-in-out infinite;
+}
+.aiw-dots i:nth-child(2) { animation-delay: 0.15s; }
+.aiw-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes aiw-bounce { 0%, 60%, 100% { transform: none; opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+.aiw-error { color: var(--c-romance, #FF2D55); font-size: 13.5px; font-weight: 570; }
+
+/* composer */
+.aiw-composer {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) * 0.4 + 12px);
+  border-top: 0.5px solid var(--sep);
+}
+.aiw-input {
+  flex: 1; resize: none; border: 0; outline: none;
+  background: var(--chipbg); color: var(--ink);
+  font: inherit; font-size: 14.5px; letter-spacing: -0.1px; line-height: 1.4;
+  border-radius: 999px; padding: 9px 15px;
+  max-height: 96px;
+}
+.aiw-input::placeholder { color: var(--ink3); }
+.aiw-input:focus { box-shadow: inset 0 0 0 1.5px var(--tint); }
+.aiw-send {
+  width: 34px; height: 34px; border-radius: 50%; border: 0; flex: none;
+  background: var(--tint); color: #fff; cursor: pointer;
+  display: grid; place-items: center;
+  transition: transform 0.16s var(--pop, ease), opacity 0.2s;
+}
+.aiw-send svg { width: 16px; height: 16px; }
+.aiw-send:active { transform: scale(0.88); }
+.aiw-send:disabled { opacity: 0.35; cursor: default; }
+
+@media (max-width: 480px) {
+  .aiw-panel { width: calc(100vw - 20px); height: min(540px, calc(100dvh - 150px)); }
+  .aiw-big-year { font-size: 48px; }
+  .aiw-big-number { font-size: 44px; }
+}

@@ -1,5 +1,5 @@
 node_modules/
 dist/
-assistant/
+/assistant/
 .netlify/
 .DS_Store
