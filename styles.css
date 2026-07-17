@@ -1432,3 +1432,145 @@ html[data-dir="fade"]::view-transition-old(root) { animation: vt-out-fade .26s e
   .tl-content:not(.tl-h) .rail { grid-template-columns: repeat(3, 1fr); }
   .tl-h .ev { width: 420px; }
 }
+
+/* ── map view (map over time) ── */
+.mapmode { position: relative; }
+.map-shell {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+  z-index: 5;
+  height: 44vh; min-height: 300px;
+  border-radius: var(--radius); overflow: hidden;
+  background: var(--card); box-shadow: var(--shadow);
+}
+#podmap { position: absolute; inset: 0; z-index: 0; background: #E9E9EE; }
+.leaflet-container { font: inherit; }
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--card) 72%, transparent) !important;
+  color: var(--ink3) !important;
+  font-size: 9.5px !important;
+}
+.leaflet-control-attribution a { color: var(--ink2) !important; }
+.leaflet-tooltip {
+  background: var(--elev); color: var(--ink); border: 0;
+  border-radius: 10px; box-shadow: var(--shadow-lift);
+  font-size: 12px; font-weight: 570; letter-spacing: -0.1px;
+  max-width: 220px; white-space: normal; padding: 6px 10px;
+}
+.leaflet-tooltip-top::before { border-top-color: var(--elev); }
+.map-fail {
+  position: absolute; inset: 0; z-index: 2;
+  display: grid; place-items: center;
+  color: var(--ink2); font-size: 14px; font-weight: 600; text-align: center; padding: 20px;
+}
+
+/* the fixed "current time" HUD */
+.map-hud {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 600;
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 148px; padding: 8px 20px 7px;
+  border-radius: 17px; text-align: center;
+  background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: var(--shadow-lift);
+  pointer-events: none;
+}
+.map-hud b {
+  font-size: 21px; font-weight: 800; letter-spacing: -0.35px; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.map-hud small { color: var(--ink2); font-size: 11.5px; font-weight: 600; letter-spacing: -0.05px; }
+
+/* markers: quiet dots for the past, a pulse for right now */
+.mk { background: none; border: 0; }
+.mk .mkin {
+  position: absolute; inset: 0; display: block;
+  transition: opacity .4s, transform .45s var(--spring);
+}
+.mk.future { pointer-events: none; }
+.mk.future .mkin { opacity: 0; transform: scale(.2); }
+.mk.past .mkin { opacity: .58; transform: scale(.72); }
+.mkdot {
+  position: absolute; inset: 0; margin: auto;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--tc);
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .4);
+  transition: width .3s var(--pop), height .3s var(--pop);
+}
+.mk.now .mkdot { width: 17px; height: 17px; }
+.mkring {
+  position: absolute; inset: 0; margin: auto;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: var(--tc); opacity: 0;
+}
+.mk.now .mkring { animation: mkpulse 1.8s ease-out infinite; }
+@keyframes mkpulse {
+  0% { transform: scale(.55); opacity: .5; }
+  70%, 100% { transform: scale(3); opacity: 0; }
+}
+
+/* the time track scrolling under the pinned map */
+.map-steps {
+  position: relative; z-index: 1;
+  max-width: 620px; margin: 0 auto;
+  padding: 22px 0 34vh;
+}
+.map-hint, .map-end {
+  text-align: center; color: var(--ink2);
+  font-size: 13.5px; font-weight: 600;
+  padding: 8px 0 22px;
+}
+.map-end { padding: 26px 0 4px; }
+.map-yearrow {
+  display: flex; align-items: center; gap: 14px;
+  padding: 24px 6px 14px;
+}
+.map-yearrow b { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+.map-yearrow i { flex: 1; height: 1px; background: var(--sep); }
+.mstep {
+  background: var(--card); border-radius: 18px; overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+  opacity: .55; transform: scale(.985);
+  transition: opacity .35s, transform .35s var(--spring), box-shadow .35s;
+}
+.mstep.past { opacity: .8; transform: none; }
+.mstep.now {
+  opacity: 1; transform: none;
+  box-shadow: var(--shadow-lift), 0 0 0 1.5px color-mix(in srgb, var(--tint) 55%, transparent);
+}
+.mstep-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 13px 15px 9px;
+}
+.mstep-head b { font-size: 16px; font-weight: 750; letter-spacing: -0.25px; }
+.mstep-head span { color: var(--ink2); font-size: 12px; font-weight: 600; flex: none; }
+.mrow {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 10px 15px; text-align: left;
+  border-top: 0.5px solid var(--sep);
+}
+.mrow:active { background: var(--press); }
+.mrow .mini-dot { margin-top: 5px; }
+.mrow-main { flex: 1; min-width: 0; }
+.mrow-main b { font-size: 13.5px; font-weight: 550; letter-spacing: -0.1px; display: block; line-height: 1.35; }
+.mrow-main small { color: var(--ink2); font-size: 12px; }
+
+@media (prefers-color-scheme: dark) {
+  #podmap { background: #17171a; }
+  .mkdot { border-color: #3A3A3C; }
+}
+@media (min-width: 900px) {
+  .map-shell { height: 52vh; }
+  .map-hud b { font-size: 24px; }
+}
+/* five layout buttons now — keep the header on one line on small phones */
+@media (max-width: 430px) {
+  .seg-mini { padding: 2px; }
+  .seg-ic { width: 30px; height: 30px; }
+  .hbtns { gap: 7px; }
+  .hbtn { width: 34px; height: 34px; }
+}
