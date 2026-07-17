@@ -346,8 +346,9 @@ function pickerLabels() {
 
 function pickerRow() {
   const L = pickerLabels();
+  // pop-src survives soft re-renders so an open popover keeps its anchor lit
   const btn = (kind, ic, label, on) => `
-    <button class="picker${on ? ' on' : ''}" data-act="pick" data-k="${kind}">
+    <button class="picker${on ? ' on' : ''}${currentPicker === kind && sheetOpen ? ' pop-src' : ''}" data-act="pick" data-k="${kind}">
       ${icon(ic)}<span>${esc(label)}</span>${icon('chevdown', 'pchev')}
     </button>`;
   return `<div class="pickerrow">
@@ -379,7 +380,7 @@ function timelineHTML() {
           </div>
           <button class="hbtn" data-act="pres-open" aria-label="Presentation mode">${icon('expand')}</button>
           <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
-          <button class="hbtn${fc ? ' badged' : ''}" data-act="filter-sheet" aria-label="More filters" data-badge="${fc || ''}">${icon('sliders')}</button>
+          <button class="hbtn${fc ? ' badged' : ''}${filterPopOpen ? ' pop-src' : ''}" data-act="filter-sheet" aria-label="More filters" data-badge="${fc || ''}">${icon('sliders')}</button>
         </div>
       </div>
       <p class="tagline">An oral history of The Pod compiled via interviews by Tommy Tables</p>
@@ -526,7 +527,7 @@ function overlapPanelHTML(evs) {
 }
 
 /* ── picker sheets (Year / Person / Kind) ──────────────────── */
-let currentPicker = null;
+let currentPicker = null, filterPopOpen = false;
 const pickerSet = k => k === 'year' ? state.years : k === 'person' ? state.people : state.types;
 
 function pickerBody(kind) {
@@ -566,7 +567,9 @@ function pickerBody(kind) {
     <p class="opt-count">${n} ${n === 1 ? 'moment' : 'moments'} match</p>
   </div>`;
 }
-function pickerSheet(kind) { currentPicker = kind; openSheet(pickerBody(kind), 'picker'); }
+// no variant class here — 'picker' would collide with the filter-button styles
+// and center-shrink the sheet body (the original mobile-picker layout bug)
+function pickerSheet(kind, anchor) { currentPicker = kind; openSheet(pickerBody(kind), '', anchor); }
 function refreshPickerSheet() {
   const body = $('#sheet-root .sheet-body');
   if (!body || !currentPicker) return;
@@ -767,20 +770,47 @@ function softRender() {
   window.scrollTo(0, y);
 }
 
-/* ── sheets (modal bottom sheets) ──────────────────────────── */
+/* ── sheets (bottom sheets on phones; filters become anchored
+      popovers on desktop, hanging off the control that opened them) ── */
 let sheetOpen = false;
-function openSheet(html, cls = '') {
+const wantsPopover = anchor =>
+  !!anchor?.isConnected && matchMedia('(min-width: 900px)').matches;
+
+function openSheet(html, cls = '', anchor = null) {
   const root = $('#sheet-root');
-  root.innerHTML = `
-    <div class="backdrop" data-act="close-sheet"></div>
-    <div class="sheet ${cls}" role="dialog" aria-modal="true">
-      <div class="grabber" data-drag></div>
-      <div class="sheet-body">${html}</div>
-    </div>`;
+  const pop = wantsPopover(anchor);
+  root.classList.toggle('pop', pop);
+  if (pop) {
+    root.innerHTML = `
+      <div class="backdrop" data-act="close-sheet"></div>
+      <div class="sheet popmenu ${cls}" role="dialog" aria-modal="true">
+        <div class="sheet-body">${html}</div>
+      </div>`;
+    const el = root.querySelector('.sheet');
+    const r = anchor.getBoundingClientRect();
+    const pw = Math.min(cls === 'tall' ? 430 : 350, innerWidth - 32);
+    let left = Math.max(r.left, 16);
+    if (left + pw > innerWidth - 16) left = Math.max(r.right - pw, 16); // hug right-edge anchors
+    const top = Math.round(r.bottom + 10);
+    el.style.width = pw + 'px';
+    el.style.left = Math.round(left) + 'px';
+    el.style.top = top + 'px';
+    el.style.maxHeight = Math.max(innerHeight - top - 24, 240) + 'px';
+    // scale out of the trigger itself, not a generic corner
+    el.style.setProperty('--ox', Math.round(r.left + r.width / 2 - left) + 'px');
+    anchor.classList.add('pop-src');
+  } else {
+    root.innerHTML = `
+      <div class="backdrop" data-act="close-sheet"></div>
+      <div class="sheet ${cls}" role="dialog" aria-modal="true">
+        <div class="grabber" data-drag></div>
+        <div class="sheet-body">${html}</div>
+      </div>`;
+    enableSheetDrag(root.querySelector('.sheet'));
+  }
   document.body.classList.add('locked');
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('open')));
   sheetOpen = true;
-  enableSheetDrag(root.querySelector('.sheet'));
 }
 function closeSheet() {
   const root = $('#sheet-root');
@@ -788,8 +818,14 @@ function closeSheet() {
   root.classList.remove('open');
   sheetOpen = false;
   currentPicker = null;
-  setTimeout(() => { if (!sheetOpen) { root.innerHTML = ''; document.body.classList.remove('locked'); } }, 320);
+  filterPopOpen = false;
+  $$('.pop-src').forEach(el => el.classList.remove('pop-src'));
+  setTimeout(() => {
+    if (!sheetOpen) { root.innerHTML = ''; root.classList.remove('pop'); document.body.classList.remove('locked'); }
+  }, 320);
 }
+/* a popover's anchor is gone after a resize/breakpoint change — fold it up */
+addEventListener('resize', () => { if (sheetOpen && $('#sheet-root .sheet.popmenu')) closeSheet(); });
 function enableSheetDrag(sheet) {
   let y0 = null, dy = 0;
   const grab = sheet.querySelector('[data-drag]');
@@ -911,7 +947,7 @@ function filterSheetBody() {
       </div>
     </div>`;
 }
-const filterSheet = () => openSheet(filterSheetBody(), 'tall');
+const filterSheet = anchor => { filterPopOpen = wantsPopover(anchor); openSheet(filterSheetBody(), 'tall', anchor); };
 function refreshFilterSheet() {
   const body = $('#sheet-root .sheet-body');
   if (!body || !$('.fsheet', body)) return;
@@ -1841,7 +1877,7 @@ document.addEventListener('click', e => {
     case 'event-sheet':  eventSheet(v); break;
     case 'person-sheet': personSheet(v); break;
     case 'settings-sheet': settingsSheet(); break;
-    case 'filter-sheet': filterSheet(); break;
+    case 'filter-sheet': filterSheet(el); break;
     case 'close-sheet':  closeSheet(); break;
     case 'apply-filters': closeSheet(); if (state.view !== 'timeline') goTimeline(); else render(); break;
 
@@ -1854,7 +1890,7 @@ document.addEventListener('click', e => {
       }
       break;
 
-    case 'pick': pickerSheet(el.dataset.k); break;
+    case 'pick': pickerSheet(el.dataset.k, el); break;
     case 'opt-all': pickerSet(el.dataset.k).clear(); softRender(); refreshPickerSheet(); break;
     case 'opt': {
       const k = el.dataset.k;
