@@ -42,6 +42,7 @@ const ICONS = {
   rows:     '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
   gantt:    '<line x1="3" y1="6" x2="12" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="5" y1="18" x2="15" y2="18"/>',
   columns:  '<line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/>',
+  camera:   '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   dot:      '<circle cx="12" cy="12" r="4"/>',
 };
 const icon = (n, cls = '') =>
@@ -73,6 +74,40 @@ const avatar = (name, cls = '') => {
   const h = hueOf(name);
   return `<span class="avatar ${cls}" style="background:linear-gradient(135deg, hsl(${h} 72% 58%), hsl(${(h + 24) % 360} 72% 42%))">${esc(initials(name))}</span>`;
 };
+
+/* ── photos ────────────────────────────────────────────────── */
+/* a photo is a URL string (sheet column) or { src, w, h } (seed) */
+function normPhoto(p) {
+  if (!p) return null;
+  if (typeof p === 'string') {
+    const src = p.trim();
+    return /^https?:\/\//i.test(src) ? { src, w: 0, h: 0 } : null;
+  }
+  const src = String(p.src || '').trim();
+  return src ? { src, w: +p.w || 0, h: +p.h || 0 } : null;
+}
+const photoRatio = (ph, fallback = '4 / 3') =>
+  ph && ph.w && ph.h ? `${ph.w} / ${ph.h}` : fallback;
+const photoAlt = e => {
+  const t = e.note || e.person || 'a pod moment';
+  return 'Photo — ' + (t.length > 90 ? t.slice(0, 90) + '…' : t);
+};
+/* card / sheet photo block; the lightbox opens from data-act="photo-view" */
+function photoFig(e, cls = '') {
+  if (!e.photo) return '';
+  const { src, w, h } = e.photo;
+  return `<figure class="ev-photo${cls ? ' ' + cls : ''}" data-act="photo-view" data-v="${e.id}"
+    role="button" tabindex="0" aria-label="View photo full size" style="--ar:${photoRatio(e.photo)}">
+    <img src="${esc(src)}" alt="${esc(photoAlt(e))}" loading="lazy" decoding="async" draggable="false"${w && h ? ` width="${w}" height="${h}"` : ''}>
+  </figure>`;
+}
+/* a broken photo URL should erase the photo, not leave a torn frame
+   (error events don't bubble, so listen in capture) */
+document.addEventListener('error', ev => {
+  const holder = ev.target?.tagName === 'IMG' &&
+    ev.target.closest('.ev-photo, .g-thumb, .mini-thumb, .p-photo, .pv-stage');
+  if (holder) holder.classList.add('broken');
+}, true);
 
 /* ── dates ─────────────────────────────────────────────────── */
 const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
@@ -137,6 +172,7 @@ function buildEvents(raw) {
         person: String(r.person || '').trim(),
         loc: String(r.loc || '').trim(),
         rel, note: String(r.note || '').trim(),
+        photo: normPhoto(r.photo),
         // month-less moments sort mid-year, like the Overlap chart plots them
         sort: (r.y ?? 9999) * 10000 + (when.m ? when.m * 100 + when.day : 650),
       };
@@ -246,8 +282,9 @@ function firstsRow(e, cap = 2) {
 
 function eventCard(e, i) {
   return `
-  <article class="card ev" data-act="event-sheet" data-v="${e.id}" style="--tc:${typeVar(e.type)};--i:${i % 8}" tabindex="0">
+  <article class="card ev${e.photo ? ' has-photo' : ''}" data-act="event-sheet" data-v="${e.id}" style="--tc:${typeVar(e.type)};--i:${i % 8}" tabindex="0">
     <span class="raildot"></span>
+    ${photoFig(e)}
     <header class="ev-head">
       <span class="tbadge">${typeIcon(e.type)}<span>${esc(e.type)}</span></span>
       <time>${esc(e.when.label)}</time>
@@ -375,11 +412,13 @@ function lanePack(list, xOf) {
 
 function gBar({ e, xx, lane }, extra = '') {
   return `
-  <button class="g-bar${extra ? ' cmp' : ''}" data-act="event-sheet" data-v="${e.id}"
+  <button class="g-bar${extra ? ' cmp' : ''}${e.photo ? ' has-photo' : ''}" data-act="event-sheet" data-v="${e.id}"
     aria-label="${esc(e.note.slice(0, 80))}"
     style="left:${xx}px;top:${Math.round(GX.ROWPAD / 2) + lane * GX.LANEH}px;--tc:${typeVar(e.type)};${extra}">
     <b><i></i>${firstMeets().has(e.id) ? icon('spark', 'bspark') : ''}${esc(e.note)}</b>
     <small>${esc(e.when.label)}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+    ${e.photo ? `<span class="g-thumb" data-act="photo-view" data-v="${e.id}" role="button" aria-label="View photo full size">
+      <img src="${esc(e.photo.src)}" alt="" loading="lazy" decoding="async" draggable="false"></span>` : ''}
   </button>`;
 }
 
@@ -784,6 +823,12 @@ function eventSheet(id) {
         ${scopePill(e.scope)}
       </div>
       <p class="esheet-note">${esc(e.note)}</p>
+      ${e.photo ? `
+      <figure class="ev-photo esheet-photo" data-act="photo-view" data-v="${e.id}" role="button" tabindex="0"
+        aria-label="View photo full size" style="--ar:${photoRatio(e.photo)}">
+        <img src="${esc(e.photo.src)}" alt="${esc(photoAlt(e))}" decoding="async" draggable="false">
+        <figcaption>${icon('camera')} Tap to view full size</figcaption>
+      </figure>` : ''}
       <div class="kv">
         <div class="kvrow">${icon('calendar')}<span>${esc(e.when.label)}${e.year && !e.when.exact && !String(e.when.label).includes(String(e.year)) ? ` · ${e.approx ? 'around ' : ''}${e.year}` : ''}</span></div>
         ${e.loc ? `<div class="kvrow">${icon('pin')}<span>${esc(e.loc)}</span></div>` : ''}
@@ -829,6 +874,8 @@ function personSheet(name) {
             <span class="mini-dot"></span>
             <span class="mini-main"><b>${esc(e.note.length > 92 ? e.note.slice(0, 92) + '…' : e.note)}</b>
             <small>${esc(e.when.label)}${e.loc ? ' · ' + esc(e.loc) : ''}</small></span>
+            ${e.photo ? `<span class="mini-thumb" data-act="photo-view" data-v="${e.id}" role="button" aria-label="View photo full size">
+              <img src="${esc(e.photo.src)}" alt="" loading="lazy" decoding="async" draggable="false"></span>` : ''}
             ${icon('chevron', 'chev')}
           </button>`).join('')}
       </div>
@@ -893,7 +940,7 @@ function settingsSheet(err = '') {
       <h4>Connect a Google Sheet</h4>
       <p class="hint">The whole app builds itself from one spreadsheet. In Google Sheets choose
       <b>Share → Anyone with the link</b> (or <b>File → Share → Publish to web → CSV</b>), then paste the link here.
-      Columns: Year · Exact Date · Person · Event Type · Location · Type · Related People · Notes.</p>
+      Columns: Year · Exact Date · Person · Event Type · Location · Type · Related People · Notes · Photo (a link to an image).</p>
       <div class="urlrow">
         <input id="sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/…" value="${esc(kind === 'sheet' ? url : '')}" autocomplete="off">
       </div>
@@ -959,6 +1006,7 @@ function sheetToSeed(rows) {
     scope:  idx(h => h === 'type' || h === 'scope' || h === 'podself'),
     rel:    idx(h => h.includes('related')),
     note:   idx(h => h.includes('note') || h.includes('description') || h.includes('what')),
+    photo:  idx(h => h.includes('photo') || h.includes('image') || h.includes('picture')),
   };
   if (col.person < 0 && col.note < 0) throw new Error('Couldn’t find Person or Notes columns in that sheet.');
   const cell = (r, i) => (i >= 0 && r[i] != null ? String(r[i]).trim() : '');
@@ -975,6 +1023,7 @@ function sheetToSeed(rows) {
       scope: normScope(cell(r, col.scope)),
       rel: cell(r, col.rel).split(/[,/]/).map(s => s.trim()).filter(Boolean),
       note: cell(r, col.note),
+      photo: cell(r, col.photo),
     };
   }).filter(r => r.person || r.note);
 }
@@ -1142,6 +1191,10 @@ function applySearch() {
 /* ── presentation mode ─────────────────────────────────────── */
 let presOpen = false, presIdx = 0, presDir = 1, presSlides = [];
 let presTimer = null, presIdleTimer = null;
+/* photo choreography state: read-delay timer, physics frame, stage props */
+let presPhotoTimer = null, presPhotoRaf = null, presFlyer = null, presPrintbar = null;
+let presLanded = new Set();
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function buildSlides() {
   const evs = filtered();
@@ -1168,7 +1221,9 @@ function slideHTML(s) {
   const e = s.e;
   const pairs = firstMeets().get(e.id) || [];
   const ppl = [e.person, ...e.rel].filter(Boolean);
-  return `<div class="p-slide ev" style="--tc:${typeVar(e.type)}">
+  // each slide's print lands at its own small deterministic tilt
+  const tilt = (((presIdx * 41) % 8) - 3.5).toFixed(1);
+  return `<div class="p-slide ev${e.photo ? ' has-photo' : ''}" style="--tc:${typeVar(e.type)}">
     <div class="p-meta">
       <span class="tbadge big">${typeIcon(e.type)}<span>${esc(e.type)}</span></span>
       <span class="p-date">${icon('calendar')}${esc(e.when.label)}</span>
@@ -1181,15 +1236,141 @@ function slideHTML(s) {
       ${pairs.length > 3 ? `<span class="fpair big more">+${pairs.length - 3} more firsts</span>` : ''}</div>` : ''}
     ${ppl.length ? `<div class="p-people">${ppl.map((n, i) =>
       `<span class="p-person" style="--i:${i}">${avatar(n, 'xl')}<span>${esc(n)}</span></span>`).join('')}</div>` : ''}
+    ${e.photo ? `
+    <div class="p-photo" data-act="photo-view" data-v="${e.id}" role="button" tabindex="0"
+      aria-label="View photo full size" style="--ar:${photoRatio(e.photo)};--tilt:${tilt}deg">
+      <figure class="p-photo-fig">
+        <img src="${esc(e.photo.src)}" alt="${esc(photoAlt(e))}" decoding="async" draggable="false">
+      </figure>
+    </div>` : ''}
   </div>`;
+}
+
+/* photo print-and-drop: after a beat for reading, the slide's photo slowly
+   feeds down from the top edge of the screen like a print coming out of a
+   slot, hangs for a moment, then falls under gravity — bouncing and
+   tilting — into its place in the scene */
+function cancelSlidePhoto() {
+  clearTimeout(presPhotoTimer); presPhotoTimer = null;
+  cancelAnimationFrame(presPhotoRaf); presPhotoRaf = null;
+  presFlyer?.remove(); presFlyer = null;
+  presPrintbar?.remove(); presPrintbar = null;
+}
+
+function armSlidePhoto() {
+  const slot = $('#p-slide-wrap .p-photo');
+  if (!slot) return;
+  if (presLanded.has(presIdx)) { slot.classList.add('landed'); return; }
+  if (reducedMotion()) {
+    presPhotoTimer = setTimeout(() => {
+      slot.classList.add('landed');
+      presLanded.add(presIdx);
+    }, 900);
+    return;
+  }
+  presPhotoTimer = setTimeout(() => startPhotoPrint(slot), 2400);
+}
+
+function startPhotoPrint(slot) {
+  const stage = $('.p-stage');
+  if (!stage || !slot.isConnected) return;
+  // nobody's watching a hidden tab — and its throttled timers would tear
+  // the choreography apart. Just set the photo in place.
+  if (document.hidden) { landPhoto(slot); return; }
+  const img = slot.querySelector('img');
+  if (!img.complete) {
+    // paper's not in the tray yet — print as soon as the photo loads
+    img.addEventListener('load', () => { if (presOpen && slot.isConnected) startPhotoPrint(slot); }, { once: true });
+    img.addEventListener('error', () => slot.classList.add('broken'), { once: true });
+    return;
+  }
+  if (!img.naturalWidth) { slot.classList.add('broken'); return; }
+
+  const rect = slot.getBoundingClientRect();
+  const tiltT = parseFloat(slot.style.getPropertyValue('--tilt')) || 0;
+
+  presPrintbar = document.createElement('div');
+  presPrintbar.className = 'p-printslot';
+  presPrintbar.style.left = rect.left - 14 + 'px';
+  presPrintbar.style.width = rect.width + 28 + 'px';
+  stage.appendChild(presPrintbar);
+
+  presFlyer = document.createElement('div');
+  presFlyer.className = 'p-flyer';
+  presFlyer.style.left = rect.left + 'px';
+  presFlyer.style.width = rect.width + 'px';
+  presFlyer.innerHTML = slot.querySelector('.p-photo-fig').outerHTML;
+  presFlyer.style.transform = `translateY(${-Math.ceil(rect.height) - 8}px)`;
+  stage.appendChild(presFlyer);
+
+  const PRINT_MS = 2300, HANG_Y = 14, HOLD_MS = 320;
+  presPhotoRaf = requestAnimationFrame(() => { presPhotoRaf = requestAnimationFrame(() => {
+    if (!presFlyer) return;
+    presPrintbar?.classList.add('on');
+    presFlyer.classList.add('printing');
+    presFlyer.style.transform = `translateY(${HANG_Y}px)`;
+  }); });
+  // transitionend is unreliable if the tab loses focus — pace by clock
+  presPhotoTimer = setTimeout(() => {
+    presPhotoTimer = setTimeout(() => dropPhoto(slot, tiltT, HANG_Y), HOLD_MS);
+  }, PRINT_MS + 60);
+}
+
+function dropPhoto(slot, tiltT, y0) {
+  if (!presFlyer || !slot.isConnected) return;
+  cancelAnimationFrame(presPhotoRaf); presPhotoRaf = null; // a late print-start frame must not fire mid-drop
+  if (document.hidden) { landPhoto(slot); return; }
+  const fig = presFlyer.querySelector('.p-photo-fig');
+  presFlyer.classList.remove('printing');
+  presPrintbar?.classList.remove('on');
+  const yT = slot.getBoundingClientRect().top;
+  if (yT <= y0 + 4) { landPhoto(slot); return; }
+
+  const G = 3400, REST = 0.33;
+  let y = y0, v = 0, a = 0, av = 6, bounces = 0, settled = false;
+  let last = performance.now();
+  const step = now => {
+    if (document.hidden) { landPhoto(slot); return; } // tab hidden mid-fall: settle instantly
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+    v += G * dt; y += v * dt;
+    // the tilt is a damped spring the bounces keep kicking
+    av += ((tiltT - a) * 90 - av * 7) * dt;
+    a += av * dt;
+    if (y >= yT) {
+      y = yT;
+      const impact = Math.abs(v);
+      if (impact < 170 || bounces >= 2) settled = true;
+      else {
+        v = -v * REST; bounces++;
+        av += (bounces % 2 ? -1 : 1) * Math.min(34, impact / 55);
+      }
+    }
+    presFlyer.style.transform = `translateY(${y}px)`;
+    fig.style.transform = `rotate(${a.toFixed(2)}deg)`;
+    if (!settled) { presPhotoRaf = requestAnimationFrame(step); return; }
+    // let the last few degrees of tilt ease out, then swap in the real slot
+    fig.style.transition = 'transform .3s var(--spring)';
+    fig.style.transform = `rotate(${tiltT}deg)`;
+    presPhotoTimer = setTimeout(() => landPhoto(slot), 300);
+  };
+  presPhotoRaf = requestAnimationFrame(step);
+}
+
+function landPhoto(slot) {
+  slot.classList.add('landed');
+  presLanded.add(presIdx);
+  cancelSlidePhoto();
 }
 
 function renderSlide() {
   const wrap = $('#p-slide-wrap');
   if (!wrap) return;
+  cancelSlidePhoto();
   const s = presSlides[presIdx];
   wrap.innerHTML = slideHTML(s);
   wrap.firstElementChild.classList.add(presDir >= 0 ? 'fwd' : 'back');
+  armSlidePhoto();
 
   // the glow lives on a persistent stage layer, decoupled from the slide's
   // entrance transform — it cross-morphs color and drifts per slide
@@ -1219,17 +1400,25 @@ function presGo(dir) {
   }
   presIdx = next; presDir = dir;
   renderSlide();
+  if (presTimer) presArmAuto(); // restart the clock for the slide we're now on
 }
 
+/* autoplay paces itself per slide: photo slides get extra dwell so the
+   print-and-drop can finish and the picture can actually be looked at */
+function presArmAuto() {
+  clearTimeout(presTimer);
+  const s = presSlides[presIdx];
+  presTimer = setTimeout(() => presGo(1), s?.kind === 'event' && s.e.photo ? 9600 : 7000);
+}
 function presPlayStop() {
-  clearInterval(presTimer); presTimer = null;
+  clearTimeout(presTimer); presTimer = null;
   const b = $('#p-play');
   if (b) b.innerHTML = icon('play');
 }
 function presPlayToggle() {
   if (presTimer) { presPlayStop(); return; }
-  presTimer = setInterval(() => presGo(1), 7000);
   $('#p-play').innerHTML = icon('pause');
+  presArmAuto();
   presGo(1);
 }
 
@@ -1247,6 +1436,7 @@ function openPresent() {
   presSlides = buildSlides();
   if (!presSlides.length) { toast('Nothing to present — adjust the filters first'); return; }
   presOpen = true; presIdx = 0; presDir = 1;
+  presLanded = new Set();
   document.body.classList.add('presenting');
   const root = $('#present-root');
   root.innerHTML = `
@@ -1276,6 +1466,7 @@ function closePresent(exitFs = true) {
   if (!presOpen) return;
   presOpen = false;
   presPlayStop();
+  cancelSlidePhoto();
   clearTimeout(presIdleTimer);
   const root = $('#present-root');
   root.classList.remove('open');
@@ -1286,6 +1477,329 @@ function closePresent(exitFs = true) {
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement && presOpen) closePresent(false);
 });
+
+/* ── photo viewer (full-size, native-feel zoom & pan) ──────── */
+/* transform model: the image sits flex-centered at its "fit" (contain)
+   size; everything else is translate(tx,ty) scale(s) around the center.
+   Pinch, wheel, double-tap, momentum pans, rubber-band edges, and a
+   swipe-down dismissal — the gestures a photo viewer is expected to have. */
+const PV = {
+  open: false, e: null, sourceEl: null,
+  natW: 4, natH: 3, s: 1, tx: 0, ty: 0,
+  ptrs: new Map(), gs: null, moved: false,
+  vx: 0, vy: 0, raf: null, tapTimer: null, lastTap: 0, lastTapX: 0, lastTapY: 0,
+  dismissY: 0,
+};
+const pvClamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+function pvFit(s = 1) {
+  const r = Math.min(innerWidth / PV.natW, innerHeight / PV.natH);
+  return { fitW: PV.natW * r * s, fitH: PV.natH * r * s };
+}
+function pvBounds(s = PV.s) {
+  const { fitW, fitH } = pvFit(s);
+  return { mx: Math.max(0, (fitW - innerWidth) / 2), my: Math.max(0, (fitH - innerHeight) / 2) };
+}
+function pvApply(s, tx, ty) {
+  PV.s = s; PV.tx = tx; PV.ty = ty;
+  const img = $('#pv-img');
+  if (img) img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  $('#pv')?.classList.toggle('zoomed', s > 1.02);
+}
+/* interrupt any in-flight transition and adopt wherever it actually is */
+function pvFreeze() {
+  const img = $('#pv-img');
+  if (!img || !img.style.transition) return;
+  const m = new DOMMatrixReadOnly(getComputedStyle(img).transform);
+  img.style.transition = '';
+  pvApply(m.a || 1, m.e, m.f);
+}
+
+function openPhoto(id, sourceEl) {
+  const e = state.events.find(x => x.id === id);
+  if (!e?.photo || PV.open) return;
+  if (presTimer) presPlayStop(); // don't let autoplay change slides underneath
+  Object.assign(PV, { open: true, e, sourceEl: sourceEl || null, s: 1, tx: 0, ty: 0, vx: 0, vy: 0, moved: false, dismissY: 0 });
+  PV.ptrs.clear(); PV.gs = null;
+  PV.natW = e.photo.w || 4; PV.natH = e.photo.h || 3;
+
+  $('#photo-root').innerHTML = `
+  <div class="pv" id="pv">
+    <div class="pv-bd"></div>
+    <div class="pv-stage" id="pv-stage">
+      <img class="pv-img" id="pv-img" src="${esc(e.photo.src)}" alt="${esc(photoAlt(e))}" draggable="false">
+    </div>
+    <button class="pv-close" data-act="photo-close" aria-label="Close photo">${icon('x')}</button>
+    <div class="pv-cap">
+      <b>${esc(e.note.length > 130 ? e.note.slice(0, 130) + '…' : e.note)}</b>
+      <small>${esc(e.when.label)}${e.person ? ' · ' + esc(e.person) : ''}${e.loc ? ' · ' + esc(e.loc.split(',')[0]) : ''}</small>
+    </div>
+  </div>`;
+  document.body.classList.add('viewing');
+  requestAnimationFrame(() => $('#pv')?.classList.add('bd-in'));
+
+  const img = $('#pv-img');
+  const begin = () => {
+    if (!PV.open || !$('#pv-img')) return;
+    if (img.naturalWidth) { PV.natW = img.naturalWidth; PV.natH = img.naturalHeight; }
+    pvLayout();
+    pvEnter();
+    pvBind();
+  };
+  if (img.complete && img.naturalWidth) begin();
+  else { img.addEventListener('load', begin, { once: true }); img.addEventListener('error', () => closePhoto('instant'), { once: true }); }
+}
+
+function pvLayout() {
+  const img = $('#pv-img');
+  if (!img) return;
+  const { fitW, fitH } = pvFit();
+  img.style.width = fitW + 'px';
+  img.style.height = fitH + 'px';
+}
+
+const pvSourceImg = () => {
+  const el = PV.sourceEl;
+  if (!el?.isConnected) return null;
+  const im = el.tagName === 'IMG' ? el : el.querySelector('img');
+  if (!im) return null;
+  const r = im.getBoundingClientRect();
+  return (r.width > 4 && r.bottom > 0 && r.top < innerHeight) ? im : null;
+};
+
+/* genie in: grow from the thumbnail that was tapped */
+function pvEnter() {
+  const img = $('#pv-img'), pv = $('#pv');
+  const srcImg = pvSourceImg();
+  const { fitW } = pvFit();
+  if (srcImg && !reducedMotion()) {
+    const r = srcImg.getBoundingClientRect();
+    pvApply(Math.max(r.width / fitW, 0.04), r.left + r.width / 2 - innerWidth / 2, r.top + r.height / 2 - innerHeight / 2);
+    img.getBoundingClientRect(); // commit the start frame
+  } else {
+    pvApply(0.9, 0, innerHeight * 0.03);
+    img.style.opacity = '0';
+  }
+  img.style.transition = 'transform .46s var(--spring), opacity .32s ease';
+  img.style.opacity = '1';
+  pvApply(1, 0, 0);
+  pv.classList.add('in');
+  setTimeout(() => { const i = $('#pv-img'); if (i) i.style.transition = ''; }, 500);
+}
+
+function closePhoto(mode = 'auto') {
+  if (!PV.open) return;
+  PV.open = false;
+  cancelAnimationFrame(PV.raf); PV.raf = null;
+  clearTimeout(PV.tapTimer);
+  const pv = $('#pv'), img = $('#pv-img'), stage = $('#pv-stage');
+  pv?.classList.remove('in', 'bd-in');
+  const srcImg = mode === 'auto' ? pvSourceImg() : null;
+  if (img && mode !== 'instant' && !reducedMotion()) {
+    if (mode === 'drop') {
+      stage.style.transition = 'transform .34s ease-in, opacity .3s ease';
+      stage.style.transform = `translateY(${PV.dismissY + innerHeight * 0.5}px) scale(.86)`;
+      stage.style.opacity = '0';
+    } else if (srcImg) {
+      const r = srcImg.getBoundingClientRect();
+      const { fitW } = pvFit();
+      img.style.transition = 'transform .4s var(--spring), opacity .34s ease .1s';
+      pvApply(Math.max(r.width / fitW, 0.04), r.left + r.width / 2 - innerWidth / 2, r.top + r.height / 2 - innerHeight / 2);
+      img.style.opacity = '0';
+    } else {
+      img.style.transition = 'transform .32s ease, opacity .28s ease';
+      pvApply(PV.s * 0.92, PV.tx, PV.ty + 36);
+      img.style.opacity = '0';
+    }
+  }
+  document.body.classList.remove('viewing');
+  const src = PV.sourceEl;
+  PV.sourceEl = null; PV.e = null;
+  setTimeout(() => { if (!PV.open) $('#photo-root').innerHTML = ''; }, mode === 'instant' ? 0 : 430);
+  if (src?.isConnected && src.tabIndex >= 0) src.focus({ preventScroll: true });
+}
+
+/* gesture plumbing */
+function pvBind() {
+  const stage = $('#pv-stage');
+  if (!stage) return;
+  stage.addEventListener('pointerdown', pvDown);
+  stage.addEventListener('pointermove', pvMove);
+  stage.addEventListener('pointerup', pvUp);
+  stage.addEventListener('pointercancel', pvUp);
+  stage.addEventListener('wheel', pvWheel, { passive: false });
+  stage.addEventListener('gesturestart', ev => ev.preventDefault()); // legacy Safari pinch
+}
+
+const pvMid = () => {
+  const [a, b] = [...PV.ptrs.values()];
+  return { x: (a.x + b.x) / 2 - innerWidth / 2, y: (a.y + b.y) / 2 - innerHeight / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+};
+
+function pvDown(ev) {
+  const stage = $('#pv-stage');
+  try { stage.setPointerCapture(ev.pointerId); } catch { /* synthetic or stale pointer */ }
+  cancelAnimationFrame(PV.raf); PV.raf = null;
+  pvFreeze();
+  PV.ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (PV.ptrs.size === 1) {
+    PV.moved = false;
+    PV.vx = PV.vy = 0;
+    PV.gs = { kind: PV.s > 1.02 ? 'pan' : 'press', x0: ev.clientX, y0: ev.clientY, tx0: PV.tx, ty0: PV.ty, t0: performance.now(), lx: ev.clientX, ly: ev.clientY, lt: performance.now() };
+  } else if (PV.ptrs.size === 2) {
+    const m = pvMid();
+    PV.gs = { kind: 'pinch', s0: PV.s, tx0: PV.tx, ty0: PV.ty, m0: m, d0: Math.max(m.d, 12) };
+  }
+}
+
+function pvMove(ev) {
+  if (!PV.ptrs.has(ev.pointerId) || !PV.gs) return;
+  PV.ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  const g = PV.gs;
+
+  if (g.kind === 'pinch' && PV.ptrs.size >= 2) {
+    const m = pvMid();
+    let s = g.s0 * m.d / g.d0;
+    s = s < 1 ? 1 - (1 - s) * 0.45 : s > 5 ? 5 + (s - 5) * 0.18 : s; // rubbery limits
+    const k = s / g.s0;
+    pvApply(s, m.x - (g.m0.x - g.tx0) * k, m.y - (g.m0.y - g.ty0) * k);
+    PV.moved = true;
+    return;
+  }
+
+  const dx = ev.clientX - g.x0, dy = ev.clientY - g.y0;
+  if (Math.hypot(dx, dy) > 7) PV.moved = true;
+
+  if (g.kind === 'pan') {
+    const now = performance.now(), dt = Math.max(now - g.lt, 1);
+    PV.vx = 0.82 * PV.vx + 0.18 * ((ev.clientX - g.lx) / dt * 1000);
+    PV.vy = 0.82 * PV.vy + 0.18 * ((ev.clientY - g.ly) / dt * 1000);
+    g.lx = ev.clientX; g.ly = ev.clientY; g.lt = now;
+    const { mx, my } = pvBounds();
+    const rub = (v, m) => v < -m ? -m + (v + m) * 0.16 : v > m ? m + (v - m) * 0.16 : v;
+    pvApply(PV.s, rub(g.tx0 + dx, mx), rub(g.ty0 + dy, my));
+  } else if (g.kind === 'press' && PV.moved) {
+    // unzoomed vertical drag = pull the photo off the screen
+    PV.dismissY = dy;
+    const stage = $('#pv-stage'), pv = $('#pv');
+    const k = Math.min(Math.abs(dy) / 340, 1);
+    stage.style.transform = `translateY(${dy}px) scale(${1 - k * 0.1})`;
+    pv.style.setProperty('--bd', String(1 - k * 0.72));
+  }
+}
+
+function pvUp(ev) {
+  if (!PV.ptrs.has(ev.pointerId)) return;
+  PV.ptrs.delete(ev.pointerId);
+  const g = PV.gs;
+
+  if (PV.ptrs.size === 1 && g?.kind === 'pinch') {
+    // one finger lifted mid-pinch: continue as a pan
+    const p = [...PV.ptrs.values()][0];
+    PV.gs = { kind: 'pan', x0: p.x, y0: p.y, tx0: PV.tx, ty0: PV.ty, t0: performance.now(), lx: p.x, ly: p.y, lt: performance.now() };
+    return;
+  }
+  if (PV.ptrs.size) return;
+  PV.gs = null;
+  if (!g) return;
+
+  if (g.kind === 'press' && PV.moved) {
+    if (Math.abs(PV.dismissY) > 96 || Math.abs(PV.vy) > 640) { closePhoto('drop'); return; }
+    const stage = $('#pv-stage'), pv = $('#pv');
+    stage.style.transition = 'transform .38s var(--spring)';
+    stage.style.transform = '';
+    pv.style.setProperty('--bd', '1');
+    setTimeout(() => { const s = $('#pv-stage'); if (s) s.style.transition = ''; }, 400);
+    PV.dismissY = 0;
+    return;
+  }
+
+  if (!PV.moved) { pvTap(ev); return; }
+
+  if (g.kind === 'pinch' || PV.s !== pvClamp(PV.s, 1, 5)) { pvSettle(); return; }
+  if (g.kind === 'pan') {
+    const { mx, my } = pvBounds();
+    if (PV.tx !== pvClamp(PV.tx, -mx, mx) || PV.ty !== pvClamp(PV.ty, -my, my)) pvSettle();
+    else if (Math.hypot(PV.vx, PV.vy) > 160) pvFling();
+  }
+}
+
+function pvTap(ev) {
+  const now = performance.now();
+  const isDouble = now - PV.lastTap < 300 && Math.hypot(ev.clientX - PV.lastTapX, ev.clientY - PV.lastTapY) < 44;
+  PV.lastTap = now; PV.lastTapX = ev.clientX; PV.lastTapY = ev.clientY;
+  clearTimeout(PV.tapTimer);
+  if (isDouble) { PV.lastTap = 0; pvDoubleZoom(ev.clientX, ev.clientY); return; }
+  // pointer capture retargets events to the stage, so hit-test by geometry
+  const r = $('#pv-img')?.getBoundingClientRect();
+  const onImg = !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+  PV.tapTimer = setTimeout(() => {
+    if (!PV.open) return;
+    if (onImg) $('#pv')?.classList.toggle('chromeless');
+    else closePhoto();
+  }, 270);
+}
+
+function pvDoubleZoom(cx, cy) {
+  const img = $('#pv-img');
+  if (!img) return;
+  let s, tx, ty;
+  if (PV.s > 1.02) { s = 1; tx = 0; ty = 0; }
+  else {
+    s = 2.6;
+    const px = cx - innerWidth / 2, py = cy - innerHeight / 2;
+    const k = s / PV.s;
+    const { mx, my } = pvBounds(s);
+    tx = pvClamp(px - (px - PV.tx) * k, -mx, mx);
+    ty = pvClamp(py - (py - PV.ty) * k, -my, my);
+  }
+  img.style.transition = 'transform .4s var(--spring)';
+  pvApply(s, tx, ty);
+  setTimeout(() => { const i = $('#pv-img'); if (i) i.style.transition = ''; }, 420);
+}
+
+function pvWheel(ev) {
+  ev.preventDefault();
+  pvFreeze();
+  const factor = Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.011 : 0.0023));
+  const s = pvClamp(PV.s * factor, 1, 5);
+  const px = ev.clientX - innerWidth / 2, py = ev.clientY - innerHeight / 2;
+  const k = s / PV.s;
+  const { mx, my } = pvBounds(s);
+  pvApply(s, pvClamp(px - (px - PV.tx) * k, -mx, mx), pvClamp(py - (py - PV.ty) * k, -my, my));
+}
+
+function pvSettle() {
+  const img = $('#pv-img');
+  if (!img) return;
+  const s = pvClamp(PV.s, 1, 5);
+  const { mx, my } = pvBounds(s);
+  const tx = s <= 1.001 ? 0 : pvClamp(PV.tx, -mx, mx);
+  const ty = s <= 1.001 ? 0 : pvClamp(PV.ty, -my, my);
+  if (s === PV.s && tx === PV.tx && ty === PV.ty) return;
+  img.style.transition = 'transform .36s var(--spring)';
+  pvApply(s, tx, ty);
+  setTimeout(() => { const i = $('#pv-img'); if (i) i.style.transition = ''; }, 380);
+}
+
+function pvFling() {
+  let last = performance.now();
+  const step = now => {
+    if (!PV.open) return;
+    const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
+    const decay = Math.exp(-dt * 5.4);
+    PV.vx *= decay; PV.vy *= decay;
+    const { mx, my } = pvBounds();
+    let tx = PV.tx + PV.vx * dt, ty = PV.ty + PV.vy * dt;
+    if (tx <= -mx || tx >= mx) { tx = pvClamp(tx, -mx, mx); PV.vx = 0; }
+    if (ty <= -my || ty >= my) { ty = pvClamp(ty, -my, my); PV.vy = 0; }
+    pvApply(PV.s, tx, ty);
+    if (Math.hypot(PV.vx, PV.vy) > 24) PV.raf = requestAnimationFrame(step);
+  };
+  PV.raf = requestAnimationFrame(step);
+}
+
+addEventListener('resize', () => { if (PV.open) { pvLayout(); pvSettle(); } });
 
 /* ── toast ─────────────────────────────────────────────────── */
 let toastTimer = null;
@@ -1351,6 +1865,9 @@ document.addEventListener('click', e => {
 
     case 'gcompare': toggle(state.compare, v); softRender(); break;
     case 'cmp-clear': state.compare.clear(); softRender(); break;
+
+    case 'photo-view': openPhoto(v, el); break;
+    case 'photo-close': closePhoto(); break;
 
     case 'pres-open': openPresent(); break;
     case 'pres-close': closePresent(); break;
@@ -1419,11 +1936,16 @@ document.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (sheetOpen) closeSheet();
+    if (PV.open) closePhoto();
+    else if (sheetOpen) closeSheet();
     else if (presOpen) closePresent();
     else if (searchOpen) closeSearch();
   }
-  if (presOpen && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+  // photo figures are role="button" spans/figures — honor Enter and Space
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-act="photo-view"]')) {
+    e.preventDefault(); e.target.click(); return;
+  }
+  if (presOpen && !PV.open && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); presGo(1); }
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); presGo(-1); }
     if (e.key.toLowerCase() === 'p') presPlayToggle();

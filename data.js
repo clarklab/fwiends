@@ -3,17 +3,23 @@
    ------------------------------------------------------------
    This is a transcription of the "Pod Timeline" Google Sheet
    (columns: Year · Exact Date · Person · Event Type · Location ·
-   Type · Related People · Notes). It is only the bootstrap data:
-   once a public Google Sheets link is connected in Settings, the
-   entire app is rebuilt from that sheet and this file is ignored.
+   Type · Related People · Notes · Photo). It is only the bootstrap
+   data: once a public Google Sheets link is connected in Settings,
+   the entire app is rebuilt from that sheet and this file is ignored.
 
    Notes ending in "…" were cut off at the edge of the source
    photo — connect the sheet to get the full text.
+
+   A moment's `photo` is a URL (the sheet's Photo column) or an
+   object { src, w, h } — the dimensions keep layouts steady while
+   the image loads. The ones below are placeholders until the real
+   pictures are dug out of everyone's camera rolls.
    ============================================================ */
 
 window.POD_SEED = [
   { y: 2012, yq: true, d: "June", person: "Melissa Torrey", type: "Romance", loc: "Salt Lake City, UT", scope: "Pod", rel: ["Brandon Strong"],
-    note: "FIRST KISS. Brandon kisses Mels at the airport when leaving back to Austin." },
+    note: "FIRST KISS. Brandon kisses Mels at the airport when leaving back to Austin.",
+    photo: { src: "https://picsum.photos/seed/pod-first-kiss/1200/900", w: 1200, h: 900 } },
 
   { y: 2012, yq: true, d: "June", person: "Melissa Torrey", type: "Romance", loc: "Salt Lake City, UT", scope: "Pod", rel: ["Brandon Strong"],
     note: "Mels talks with therapist about what she should do, they say should break up but not be with any…" },
@@ -28,7 +34,8 @@ window.POD_SEED = [
     note: "First Disney World" },
 
   { y: 2012, person: "Stephanie Schuhmacher", type: "Core", loc: "Paris, France", scope: "Self", rel: [],
-    note: "First international solo trip. 2 week trip. Kept a Tumblr travel blog called “I’m in France, Bitch”…" },
+    note: "First international solo trip. 2 week trip. Kept a Tumblr travel blog called “I’m in France, Bitch”…",
+    photo: { src: "https://picsum.photos/seed/pod-paris-solo/900/1200", w: 900, h: 1200 } },
 
   { y: 2012, yq: true, d: "November–December", person: "Brandon Strong", type: "Relationship", loc: "Salt Lake City, UT", scope: "Pod", rel: [],
     note: "Brandon lives with Mels for 2 months." },
@@ -37,7 +44,8 @@ window.POD_SEED = [
     note: "Remodel from hell. Started tumblr mydamnhouse, attorney made me take it down. Sellers had co…" },
 
   { y: 2012, d: "12/17/2012", person: "Melissa Torrey", type: "Core", loc: "Anaheim, CA", scope: "Self", rel: ["Brandon Strong"],
-    note: "First Disneyland Brandon" },
+    note: "First Disneyland Brandon",
+    photo: { src: "https://picsum.photos/seed/pod-disneyland/1200/800", w: 1200, h: 800 } },
 
   { y: 2012, yq: true, d: "December", person: "Clark and Angie", type: "Meeting", scope: "Pod", rel: ["Kiira Decoster"],
     note: "Clark had photo of Kiira Dec 2012" },
@@ -58,16 +66,19 @@ window.POD_SEED = [
     note: "Mels and Matt meet. But where??? Probably at a Hideout event." },
 
   { y: 2014, d: "10/11/2014", person: "Melissa Torrey", type: "Friendship", loc: "Austin, TX", scope: "Pod", rel: ["Matt Manchester"],
-    note: "Big camping trip with a bunch of Retro people. Matt gets everyone to be naked – “wouldn’t it be fu…”" },
+    note: "Big camping trip with a bunch of Retro people. Matt gets everyone to be naked – “wouldn’t it be fu…”",
+    photo: { src: "https://picsum.photos/seed/pod-camping/1600/1000", w: 1600, h: 1000 } },
 
   { y: 2015, d: "06/01/2015", person: "Tom Ivey", type: "Friendship", loc: "Austin, TX", scope: "Pod", rel: ["Brandon Strong"],
     note: "Facebook friends June 2015" },
 
   { y: 2015, d: "09/07/2015", person: "Matt Manchester", type: "Friendship", loc: "Austin, TX", scope: "Pod", rel: ["Sophia Spera"],
-    note: "River float trip where Matt remeets Sophia" },
+    note: "River float trip where Matt remeets Sophia",
+    photo: { src: "https://picsum.photos/seed/pod-river-float/1200/900", w: 1200, h: 900 } },
 
   { y: 2015, d: "09/15/2015", person: "Melissa Torrey", type: "Friendship", loc: "Austin, TX", scope: "Pod", rel: ["Sophia Spera"],
-    note: "Melissa meets Sophia at Godspeed You! Black Emperor concert at the Mohawk" },
+    note: "Melissa meets Sophia at Godspeed You! Black Emperor concert at the Mohawk",
+    photo: { src: "https://picsum.photos/seed/pod-mohawk-show/1000/1000", w: 1000, h: 1000 } },
 
   { y: 2015, d: "09/15/2015", person: "Brandon Strong", type: "Friendship", loc: "Austin, TX", scope: "Pod", rel: ["Sophia Spera"],
     note: "Brandon meets Sophia at Godspeed You! Black Emperor concert at the Mohawk" },
@@ -94,5 +105,6 @@ window.POD_SEED = [
     note: "Facebook friends July 2017" },
 
   { y: 2017, person: "Stephanie Schuhmacher", type: "Relationship", loc: "Austin, TX", scope: "Self", rel: ["Melissa Torrey"],
-    note: "Got Married to Andy. Immediate f…" },
+    note: "Got Married to Andy. Immediate f…",
+    photo: { src: "https://picsum.photos/seed/pod-wedding/1000/1250", w: 1000, h: 1250 } },
 ];
