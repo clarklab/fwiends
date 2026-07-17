@@ -642,6 +642,90 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .g-leg i { width: 8px; height: 8px; border-radius: 50%; }
 .g-note { color: var(--ink3); font-size: 12.5px; text-align: center; margin-top: 14px; }
 
+/* ── tree view (braided lifelines) ── */
+.tpanel { padding: 4px 0 10px; }
+.t-scroll { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.t-scroll::-webkit-scrollbar { display: none; }
+.t-canvas { position: relative; }
+.t-canvas svg { position: absolute; inset: 0; pointer-events: none; }
+.t-canvas svg path {
+  fill: none; stroke-width: 3; stroke-linecap: round;
+  stroke: hsl(var(--ph) 62% 46% / 0.78);
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+}
+/* strands draw themselves in when the panel scrolls into view */
+.tpanel.in svg path { animation: t-draw 1.1s ease forwards; animation-delay: calc(var(--pi, 0) * 90ms); }
+@keyframes t-draw { to { stroke-dashoffset: 0; } }
+.t-knot {
+  fill: var(--tc); stroke: var(--card); stroke-width: 2.5;
+  opacity: 0;
+}
+.tpanel.in .t-knot { animation: t-pop .5s var(--pop) forwards; animation-delay: calc(.25s + var(--ni, 0) * 40ms); }
+@keyframes t-pop { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-color-scheme: dark) {
+  .t-canvas svg path { stroke: hsl(var(--ph) 68% 60% / 0.8); }
+}
+
+.t-yearrow {
+  position: absolute; left: 0; right: 0; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  pointer-events: none;
+}
+.t-yearrow b { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; color: var(--ink2); }
+.t-yearrow i { flex: 1; height: 0; border-top: 1.5px dashed var(--sep); }
+
+.t-entry {
+  position: absolute; transform: translate(-50%, -50%); z-index: 3;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px 4px 4px; border-radius: 999px;
+  background: var(--card); box-shadow: var(--shadow);
+  font-size: 12.5px; font-weight: 650; letter-spacing: -0.1px; white-space: nowrap;
+  transition: transform .16s var(--pop), box-shadow .2s;
+}
+.t-entry:active { transform: translate(-50%, -50%) scale(.94); }
+.tpanel .t-entry { opacity: 0; }
+.tpanel.in .t-entry { animation: t-entryin .5s var(--spring) forwards; animation-delay: .15s; }
+@keyframes t-entryin {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.t-node {
+  position: absolute; transform: translateY(-50%); z-index: 2;
+  max-width: 224px; padding: 6px 11px 7px; border-radius: 12px; text-align: left;
+  background: color-mix(in srgb, var(--tc) 9%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc) 28%, transparent), 0 1px 4px rgba(0,0,0,.06);
+  transition: transform .16s var(--pop), box-shadow .2s, z-index 0s;
+}
+.tpanel .t-node { opacity: 0; }
+.tpanel.in .t-node { animation: t-nodein .5s var(--spring) forwards; animation-delay: calc(.3s + var(--i, 0) * 35ms); }
+@keyframes t-nodein { from { opacity: 0; transform: translateY(calc(-50% + 10px)); } to { opacity: 1; transform: translateY(-50%); } }
+.t-node:hover, .t-node:focus-visible {
+  transform: translateY(-50%) scale(1.04); z-index: 6;
+  box-shadow: var(--shadow-lift), inset 0 0 0 1px color-mix(in srgb, var(--tc) 45%, transparent);
+}
+.t-node:active { transform: translateY(-50%) scale(.97); }
+.t-node b {
+  display: block; font-size: 12px; font-weight: 650; letter-spacing: -0.1px; line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-node small {
+  display: block; margin-top: 1px; font-size: 10.5px; color: var(--ink2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.t-node.has-photo { padding-right: 42px; }
+.t-thumb {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border-radius: 9px; overflow: hidden;
+  box-shadow: 0 0 0 1.5px var(--card), 0 1px 4px rgba(0,0,0,.3);
+  cursor: zoom-in;
+  transition: transform .18s var(--pop);
+}
+.t-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.t-thumb:hover { transform: translateY(-50%) scale(1.32) rotate(-2deg); }
+.t-thumb:active { transform: translateY(-50%) scale(1.08); }
+.t-thumb.broken { display: none; }
+
 /* ── tab bar ── */
 #tabbar {
   position: fixed; inset: auto 0 0 0; z-index: 40;

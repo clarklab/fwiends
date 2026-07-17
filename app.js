@@ -41,6 +41,7 @@ const ICONS = {
   table:    '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>',
   rows:     '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
   gantt:    '<line x1="3" y1="6" x2="12" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="5" y1="18" x2="15" y2="18"/>',
+  branch:   '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
   columns:  '<line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/>',
   camera:   '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   dot:      '<circle cx="12" cy="12" r="4"/>',
@@ -105,7 +106,7 @@ function photoFig(e, cls = '') {
    (error events don't bubble, so listen in capture) */
 document.addEventListener('error', ev => {
   const holder = ev.target?.tagName === 'IMG' &&
-    ev.target.closest('.ev-photo, .g-thumb, .mini-thumb, .p-photo, .pv-stage');
+    ev.target.closest('.ev-photo, .g-thumb, .t-thumb, .mini-thumb, .p-photo, .pv-stage');
   if (holder) holder.classList.add('broken');
 }, true);
 
@@ -139,11 +140,12 @@ const VIEWS = ['timeline', 'people', 'places', 'insights'];
 const VIEW_TITLE = { timeline: 'Fwiends', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
 const LS_MODE = 'podtl.mode';
-const MODES = [['list', 'rows'], ['flow', 'columns'], ['overlap', 'gantt']];
+const MODES = [['list', 'rows'], ['flow', 'columns'], ['overlap', 'gantt'], ['tree', 'branch']];
+const MODE_LABEL = { list: 'Vertical timeline', flow: 'Horizontal timeline', overlap: 'Overlap chart', tree: 'Tree of lifelines' };
 
 const state = {
   view: 'timeline',
-  mode: ['list', 'flow', 'overlap'].includes(localStorage.getItem(LS_MODE))
+  mode: ['list', 'flow', 'overlap', 'tree'].includes(localStorage.getItem(LS_MODE))
     ? localStorage.getItem(LS_MODE)
     : (localStorage.getItem('podtl.orient') === 'h' ? 'flow' : 'list'),
   compare: new Set(),
@@ -311,6 +313,7 @@ function timelineGroupsHTML() {
     </div>`;
   }
   if (state.mode === 'overlap') return overlapPanelHTML(evs);
+  if (state.mode === 'tree') return treePanelHTML(evs);
   const groups = new Map();
   for (const e of evs) {
     const k = e.year ?? 'Undated';
@@ -376,7 +379,7 @@ function timelineHTML() {
           <div class="seg-mini" role="group" aria-label="Timeline layout">
             ${MODES.map(([m, ic]) => `
               <button class="seg-ic${state.mode === m ? ' on' : ''}" data-act="set-mode" data-v="${m}"
-                aria-label="${m === 'list' ? 'Vertical timeline' : m === 'flow' ? 'Horizontal timeline' : 'Overlap chart'}">${icon(ic)}</button>`).join('')}
+                aria-label="${MODE_LABEL[m]}">${icon(ic)}</button>`).join('')}
           </div>
           <button class="hbtn" data-act="pres-open" aria-label="Presentation mode">${icon('expand')}</button>
           <button class="hbtn" data-act="settings-sheet" aria-label="Data source & settings">${icon('gear')}</button>
@@ -524,6 +527,113 @@ function overlapPanelHTML(evs) {
     </div>
   </div>
   ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the chart — no year in the sheet</p>` : ''}`;
+}
+
+/* ── tree layout (inside the Timeline view) ────────────────────
+   The pod as a braid: every person is a colored noodle flowing down
+   a vertical time axis. Moments are knots — when a moment involves
+   several people, their strands bend toward its spot (the centroid of
+   their home columns) and bundle through it. People enter the story
+   with a little name chip where their strand begins. */
+const TR = { COLW: 116, ROWH: 88, YEARH: 66, TOP: 88, PADL: 26, PILLW: 224 };
+
+function treePanelHTML(evs) {
+  const dated = evs.filter(e => e.year);
+  const undated = evs.length - dated.length;
+  if (!dated.length) {
+    return `<div class="empty">
+      <div class="empty-ic">${icon('branch')}</div>
+      <h3>Nothing to braid yet</h3>
+      <p>Moments need a year to appear on the tree.</p>
+    </div>`;
+  }
+
+  // home columns, in order of first appearance in the story
+  const colOf = new Map();
+  for (const e of dated) {
+    for (const raw of [e.person, ...e.rel]) {
+      const name = String(raw || '').trim();
+      if (name && !colOf.has(name)) colOf.set(name, colOf.size);
+    }
+  }
+  const homeX = name => TR.PADL + colOf.get(name) * TR.COLW + TR.COLW / 2;
+
+  // one row per moment, with a divider row when the year changes
+  let y = TR.TOP;
+  const yearRows = [], knots = [];
+  let curYear = null;
+  for (const e of dated) {
+    if (e.year !== curYear) { curYear = e.year; yearRows.push({ year: curYear, y }); y += TR.YEARH; }
+    const ppl = [...new Set([e.person, ...e.rel].map(s => String(s || '').trim()).filter(Boolean))];
+    const x = Math.round(ppl.reduce((s, n) => s + homeX(n), 0) / ppl.length);
+    knots.push({ e, x, y, ppl });
+    y += TR.ROWH;
+  }
+  const W = TR.PADL + colOf.size * TR.COLW + 60;
+  const H = y + 28;
+
+  // strand points; a small per-knot offset keeps bundled lines tellable-apart
+  const strands = new Map();
+  for (const nd of knots) {
+    nd.ppl.forEach((name, i) => {
+      const pt = { x: nd.x + (i - (nd.ppl.length - 1) / 2) * 7, y: nd.y };
+      (strands.get(name) || strands.set(name, []).get(name)).push(pt);
+    });
+  }
+
+  // entry chips above each person's first knot (fanned out when several
+  // people step into the story at the same moment)
+  const entries = [];
+  for (const nd of knots) {
+    const entering = nd.ppl.filter(n => strands.get(n)[0].y === nd.y);
+    entering.forEach((name, j) => {
+      const cx = Math.round(nd.x + (j - (entering.length - 1) / 2) * 128);
+      entries.push({ name, x: cx, y: nd.y - 56 });
+      strands.get(name).unshift({ x: cx, y: nd.y - 40 });
+    });
+  }
+
+  const pathD = pts => pts.map((p, i) => {
+    if (!i) return `M ${p.x} ${p.y}`;
+    const prev = pts[i - 1];
+    const k = Math.min(Math.max((p.y - prev.y) * 0.5, 18), 110);
+    return `C ${prev.x} ${prev.y + k}, ${p.x} ${p.y - k}, ${p.x} ${p.y}`;
+  }).join(' ');
+
+  const noodles = [...strands.entries()].map(([name, pts], i) =>
+    `<path d="${pathD(pts)}" pathLength="1" style="--ph:${hueOf(name)};--pi:${i}"><title>${esc(name)}</title></path>`).join('');
+  const dots = knots.map((nd, i) =>
+    `<circle class="t-knot" cx="${nd.x}" cy="${nd.y}" r="7" style="--tc:${typeVar(nd.e.type)};--ni:${i}"/>`).join('');
+
+  let i = 0;
+  return `
+  <div class="card tpanel" style="--i:0">
+    <div class="t-scroll">
+      <div class="t-canvas" style="width:${W}px;height:${H}px">
+        <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${noodles}${dots}</svg>
+        ${yearRows.map(r => `
+        <div class="t-yearrow" style="top:${r.y + TR.YEARH / 2}px"><b>${r.year}</b><i></i></div>`).join('')}
+        ${entries.map(en => `
+        <button class="t-entry" data-act="person-sheet" data-v="${esc(en.name)}" style="left:${en.x}px;top:${en.y}px">
+          ${avatar(en.name, 'xs')}<span>${esc(en.name.split(' ')[0])}</span>
+        </button>`).join('')}
+        ${knots.map(nd => {
+          const e = nd.e;
+          const flip = nd.x > W - (TR.PILLW + 50);
+          const note = e.note.length > 62 ? e.note.slice(0, 62) + '…' : e.note;
+          return `
+        <button class="t-node${e.photo ? ' has-photo' : ''}" data-act="event-sheet" data-v="${e.id}"
+          style="${flip ? `right:${W - nd.x + 18}px` : `left:${nd.x + 18}px`};top:${nd.y}px;--tc:${typeVar(e.type)};--i:${i++ % 12}">
+          <b>${firstMeets().has(e.id) ? icon('spark', 'bspark') : ''}${esc(note)}</b>
+          <small>${esc(e.when.label)}${e.loc ? ` · ${esc(e.loc.split(',')[0])}` : ''}</small>
+          ${e.photo ? `<span class="t-thumb" data-act="photo-view" data-v="${e.id}" role="button" aria-label="View photo full size">
+            <img src="${esc(e.photo.src)}" alt="" loading="lazy" decoding="async" draggable="false"></span>` : ''}
+        </button>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+  ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the tree — no year in the sheet</p>` : ''}`;
 }
 
 /* ── picker sheets (Year / Person / Kind) ──────────────────── */
