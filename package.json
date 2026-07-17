@@ -1,0 +1,22 @@
+{
+  "name": "fwiends",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fwiends — an oral history of The Pod",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/collect-dist.mjs",
+    "build:widget": "vite build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "@assistant-ui/react": "^0.11.0",
+    "@netlify/blobs": "^10.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0"
+  }
+}

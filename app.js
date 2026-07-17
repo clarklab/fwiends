@@ -2122,6 +2122,18 @@ addEventListener('scroll', () => {
   $('#cbar').classList.toggle('on', window.scrollY > 64);
 }, { passive: true });
 
+/* ── data bridge for the AI assistant widget ───────────────── */
+window.FWIENDS = {
+  // the entire dataset, in plain rows the archivist can reason over
+  data: () => state.events.map(e => ({
+    year: e.year, when: e.when.label, person: e.person, kind: e.type,
+    place: e.loc, scope: e.scope, with: e.rel, note: e.note,
+  })),
+  face: name => hedcut(name),
+  hue: name => hueOf(name),
+  openPerson: name => personSheet(name),
+};
+
 /* ── boot ──────────────────────────────────────────────────── */
 async function boot() {
   state.events = buildEvents(window.POD_SEED);
