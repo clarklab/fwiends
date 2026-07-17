@@ -44,6 +44,7 @@ const ICONS = {
   branch:   '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
   columns:  '<line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/>',
   camera:   '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  map:      '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
   dot:      '<circle cx="12" cy="12" r="4"/>',
 };
 const icon = (n, cls = '') =>
@@ -149,12 +150,12 @@ const VIEWS = ['timeline', 'people', 'places', 'insights'];
 const VIEW_TITLE = { timeline: 'Fwiends', people: 'People', places: 'Places', insights: 'Insights' };
 const LS_KEY = 'podtl.sheet.v1';
 const LS_MODE = 'podtl.mode';
-const MODES = [['list', 'rows'], ['flow', 'columns'], ['overlap', 'gantt'], ['tree', 'branch']];
-const MODE_LABEL = { list: 'Vertical timeline', flow: 'Horizontal timeline', overlap: 'Overlap chart', tree: 'Tree of lifelines' };
+const MODES = [['list', 'rows'], ['flow', 'columns'], ['overlap', 'gantt'], ['tree', 'branch'], ['map', 'map']];
+const MODE_LABEL = { list: 'Vertical timeline', flow: 'Horizontal timeline', overlap: 'Overlap chart', tree: 'Tree of lifelines', map: 'Map over time' };
 
 const state = {
   view: 'timeline',
-  mode: ['list', 'flow', 'overlap', 'tree'].includes(localStorage.getItem(LS_MODE))
+  mode: ['list', 'flow', 'overlap', 'tree', 'map'].includes(localStorage.getItem(LS_MODE))
     ? localStorage.getItem(LS_MODE)
     : (localStorage.getItem('podtl.orient') === 'h' ? 'flow' : 'list'),
   compare: new Set(),
@@ -323,6 +324,7 @@ function timelineGroupsHTML() {
   }
   if (state.mode === 'overlap') return overlapPanelHTML(evs);
   if (state.mode === 'tree') return treePanelHTML(evs);
+  if (state.mode === 'map') return mapPanelHTML(evs);
   const groups = new Map();
   for (const e of evs) {
     const k = e.year ?? 'Undated';
@@ -645,6 +647,274 @@ function treePanelHTML(evs) {
   ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the tree — no year in the sheet</p>` : ''}`;
 }
 
+/* ── map layout (inside the Timeline view) ─────────────────────
+   A scrollytelling map: the map stays pinned (with the current
+   month/year in a fixed HUD) while a column of month-by-month steps
+   scrolls beneath it. The step under the focus line is "now" — its
+   moments pulse on the map, everything earlier stays as quiet dots,
+   everything later hasn't happened yet. Tiles are CARTO's Positron
+   (light_all) — the flattest, whitest free OSM style around. */
+
+/* places the seed data mentions; anything else is geocoded via
+   Nominatim once and remembered in localStorage */
+const GEO = {
+  'salt lake city, ut': [40.7608, -111.8910],
+  'austin, tx':         [30.2672, -97.7431],
+  'buda, tx':           [30.0852, -97.8404],
+  'anaheim, ca':        [33.8366, -117.9143],
+  'orlando, fl':        [28.5384, -81.3789],
+  'paris, france':      [48.8566, 2.3522],
+};
+const LS_GEO = 'podtl.geo.v1';
+const geoCache = (() => { try { return JSON.parse(localStorage.getItem(LS_GEO)) || {}; } catch { return {}; } })();
+const geoKey = loc => String(loc).trim().toLowerCase();
+const coordsFor = loc => loc ? (GEO[geoKey(loc)] || geoCache[geoKey(loc)] || null) : null;
+
+let geoBusy = false;
+const geoFailed = new Set(); // don't hammer Nominatim over a place it can't find
+async function geocodeMissing(locs) {
+  const missing = [...new Set(locs.map(geoKey))]
+    .filter(k => k && !GEO[k] && !geoCache[k] && !geoFailed.has(k));
+  if (!missing.length || geoBusy) return;
+  geoBusy = true;
+  let found = 0;
+  for (const k of missing) {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(k)}`);
+      const hit = (await res.json())[0];
+      if (hit) { geoCache[k] = [+hit.lat, +hit.lon]; found++; localStorage.setItem(LS_GEO, JSON.stringify(geoCache)); }
+      else geoFailed.add(k);
+    } catch { geoFailed.add(k); }
+    await new Promise(r => setTimeout(r, 1100)); // Nominatim asks for ≤1 req/s
+  }
+  geoBusy = false;
+  if (found && mapM.map) { addMapMarkers(); applyStepToMarkers(mapM.idx); focusStep(mapM.idx, true); }
+}
+
+/* Leaflet, fetched only when the map mode is first opened */
+let leafletP = null;
+function ensureLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletP) return leafletP;
+  leafletP = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    const js = document.createElement('script');
+    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.onload = () => resolve(window.L);
+    js.onerror = () => { leafletP = null; js.remove(); reject(new Error('Leaflet failed to load')); };
+    document.head.appendChild(js);
+  });
+  return leafletP;
+}
+
+const mapScheme = matchMedia('(prefers-color-scheme: dark)');
+const tileURL = () =>
+  `https://{s}.basemaps.cartocdn.com/${mapScheme.matches ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`;
+mapScheme.addEventListener?.('change', () => mapM.tiles?.setUrl(tileURL()));
+
+const mapM = {
+  map: null, L: null, tiles: null, gen: 0,
+  steps: [], stepOf: new Map(), dated: [], total: 0,
+  markers: new Map(), stepEls: [], shellEl: null,
+  idx: -1, raf: 0, pending: null,
+};
+
+function mapPanelHTML(evs) {
+  const dated = evs.filter(e => e.year);
+  const undated = evs.length - dated.length;
+  if (!dated.length) {
+    mapM.pending = null;
+    return `<div class="empty">
+      <div class="empty-ic">${icon('map')}</div>
+      <h3>Nothing to map yet</h3>
+      <p>Moments need a year to travel the map through time.</p>
+    </div>`;
+  }
+
+  // months, in story order: a new step whenever (year, month) changes.
+  // Month-less moments sort mid-year already, so they form their own
+  // "sometime that year" stop between June and July.
+  const steps = [];
+  let cur = null;
+  for (const e of dated) {
+    const m = e.when.m || 0;
+    if (!cur || cur.y !== e.year || cur.m !== m) {
+      cur = { y: e.year, m, label: m ? `${MON_ABBR[m - 1]} ${e.year}` : String(e.year), evs: [] };
+      steps.push(cur);
+    }
+    cur.evs.push(e);
+  }
+  const stepOf = new Map();
+  steps.forEach((st, i) => st.evs.forEach(e => stepOf.set(e.id, i)));
+  mapM.pending = { steps, stepOf, dated };
+
+  const unplaced = dated.filter(e => !e.loc).length;
+  return `
+  <div class="mapmode">
+    <div class="map-shell">
+      <div id="podmap" aria-label="Map of the pod’s moments through time"></div>
+      <div class="map-hud" aria-live="polite"><b id="map-now"></b><small id="map-count"></small></div>
+    </div>
+    <div class="map-steps" id="map-steps">
+      <p class="map-hint">Scroll to travel through time ${icon('chevdown')}</p>
+      ${steps.map((st, i) => `
+      ${i === 0 || steps[i - 1].y !== st.y ? `<div class="map-yearrow"><i></i><b>${st.y}</b><i></i></div>` : ''}
+      <section class="mstep" data-step="${i}">
+        <header class="mstep-head">
+          <b>${esc(st.label)}${st.m ? '' : ' · sometime that year'}</b>
+          <span>${st.evs.length} ${st.evs.length === 1 ? 'moment' : 'moments'}</span>
+        </header>
+        ${st.evs.map(e => `
+        <button class="mrow" data-act="event-sheet" data-v="${e.id}" style="--tc:${typeVar(e.type)}">
+          <span class="mini-dot"></span>
+          <span class="mrow-main">
+            <b>${esc(e.note.length > 96 ? e.note.slice(0, 96) + '…' : e.note)}</b>
+            <small>${esc(e.when.label)}${e.person ? ' · ' + esc(e.person.split(' ')[0]) : ''}${e.loc ? ' · ' + esc(e.loc.split(',')[0]) : ''}</small>
+          </span>
+          ${e.photo ? `<span class="mini-thumb" data-act="photo-view" data-v="${e.id}" role="button" aria-label="View photo full size">
+            <img src="${esc(e.photo.src)}" alt="" loading="lazy" decoding="async" draggable="false"></span>` : ''}
+        </button>`).join('')}
+      </section>`).join('')}
+      <p class="map-end">${icon('spark')} That’s the whole story — so far</p>
+    </div>
+  </div>
+  ${unplaced ? `<p class="g-note">${unplaced} ${unplaced === 1 ? 'moment has' : 'moments have'} no place in the sheet — on the clock but not the map</p>` : ''}
+  ${undated ? `<p class="g-note">${undated} undated ${undated === 1 ? 'moment isn’t' : 'moments aren’t'} on the map — no year in the sheet</p>` : ''}`;
+}
+
+async function mountMap() {
+  unmountMap();
+  const data = mapM.pending;
+  if (!data) return;
+  const gen = ++mapM.gen;
+  Object.assign(mapM, {
+    steps: data.steps, stepOf: data.stepOf, dated: data.dated,
+    total: data.dated.length, idx: -1,
+    stepEls: $$('#map-steps .mstep'), shellEl: $('.map-shell'),
+  });
+  setMapHUD(0); // the HUD reads right even before tiles arrive
+
+  let L;
+  try { L = await ensureLeaflet(); }
+  catch { $('.map-hud')?.insertAdjacentHTML('beforebegin', '<p class="map-fail">Couldn’t load the map — check your connection</p>'); return; }
+  const host = $('#podmap');
+  if (gen !== mapM.gen || !host || host._leaflet_id) return; // re-rendered while Leaflet loaded
+
+  mapM.L = L;
+  const map = L.map(host, {
+    zoomControl: false,
+    scrollWheelZoom: false,                        // the wheel scrolls time, not the map
+    dragging: !matchMedia('(pointer: coarse)').matches, // touch-drag keeps scrolling the page
+    touchZoom: true,
+  });
+  mapM.map = map;
+  mapM.tiles = L.tileLayer(tileURL(), {
+    subdomains: 'abcd', maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }).addTo(map);
+  map.setView([39, -95], 4); // placeholder until the first fit
+
+  addMapMarkers();
+  const all = [...mapM.markers.values()].map(r => r.m.getLatLng());
+  if (all.length) map.fitBounds(L.latLngBounds(all).pad(0.2), { animate: false, maxZoom: 11 });
+  syncMapToScroll();
+  geocodeMissing(mapM.dated.map(e => e.loc).filter(Boolean));
+}
+
+function unmountMap() {
+  mapM.gen++;
+  cancelAnimationFrame(mapM.raf);
+  try { mapM.map?.remove(); } catch { /* container may already be gone */ }
+  Object.assign(mapM, { map: null, tiles: null, markers: new Map(), stepEls: [], shellEl: null, idx: -1 });
+}
+
+/* several moments in one city fan out on a tiny golden-angle spiral
+   so they read as a cluster instead of one dot */
+function addMapMarkers() {
+  const perLoc = new Map();
+  for (const e of mapM.dated) {
+    const at = coordsFor(e.loc);
+    if (!at) continue;
+    const k = geoKey(e.loc);
+    const n = perLoc.get(k) || 0;
+    perLoc.set(k, n + 1);
+    if (mapM.markers.has(e.id)) continue;
+    const a = n * 2.39996, r = 0.004 * Math.sqrt(n);
+    const marker = mapM.L.marker([at[0] + r * Math.sin(a), at[1] + r * Math.cos(a)], {
+      icon: mapM.L.divIcon({
+        className: 'mk future', iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<span class="mkin" style="--tc:${typeVar(e.type)}"><i class="mkring"></i><i class="mkdot"></i></span>`,
+      }),
+      keyboard: false,
+    }).on('click', () => eventSheet(e.id)).addTo(mapM.map);
+    marker.bindTooltip(e.note.length > 60 ? e.note.slice(0, 60) + '…' : e.note, { direction: 'top', offset: [0, -10] });
+    mapM.markers.set(e.id, { m: marker, step: mapM.stepOf.get(e.id) });
+  }
+}
+
+function applyStepToMarkers(idx) {
+  for (const rec of mapM.markers.values()) {
+    const el = rec.m.getElement();
+    if (!el) continue;
+    const cls = rec.step < idx ? 'past' : rec.step === idx ? 'now' : 'future';
+    el.classList.remove('past', 'now', 'future');
+    el.classList.add(cls);
+    rec.m.setZIndexOffset(cls === 'now' ? 1000 : 0);
+  }
+}
+
+function focusStep(idx, instant = false) {
+  if (!mapM.map) return;
+  const pts = [...mapM.markers.values()].filter(r => r.step === idx).map(r => r.m.getLatLng());
+  if (!pts.length) return; // a month with no mappable place keeps the current framing
+  const b = mapM.L.latLngBounds(pts).pad(0.3);
+  const opts = { maxZoom: 11, paddingTopLeft: [24, 76], paddingBottomRight: [24, 24] };
+  if (instant || reducedMotion()) mapM.map.fitBounds(b, { ...opts, animate: false });
+  else mapM.map.flyToBounds(b, { ...opts, duration: 0.9 });
+}
+
+function setMapHUD(idx) {
+  const st = mapM.steps[idx];
+  const now = $('#map-now'), count = $('#map-count');
+  if (!st || !now) return;
+  now.textContent = st.label;
+  const cum = mapM.steps.slice(0, idx + 1).reduce((s, x) => s + x.evs.length, 0);
+  count.textContent = `${cum} of ${mapM.total} ${mapM.total === 1 ? 'moment' : 'moments'} so far`;
+}
+
+function setStep(idx, instant = false) {
+  mapM.idx = idx;
+  setMapHUD(idx);
+  mapM.stepEls.forEach((el, i) => {
+    el.classList.toggle('now', i === idx);
+    el.classList.toggle('past', i < idx);
+  });
+  applyStepToMarkers(idx);
+  focusStep(idx, instant);
+}
+
+/* the focus line sits just under the pinned map: whichever month's
+   card has crossed it is the time we're "in" */
+function syncMapToScroll() {
+  if (!mapM.stepEls.length) return;
+  const shell = mapM.shellEl?.getBoundingClientRect();
+  const focus = (shell ? shell.bottom : innerHeight * 0.5) + Math.min(innerHeight * 0.12, 110);
+  let idx = 0;
+  for (let i = 0; i < mapM.stepEls.length; i++) {
+    if (mapM.stepEls[i].getBoundingClientRect().top < focus) idx = i; else break;
+  }
+  if (idx !== mapM.idx) setStep(idx, mapM.idx < 0);
+}
+
+addEventListener('scroll', () => {
+  if (!mapM.map && !mapM.stepEls.length) return;
+  cancelAnimationFrame(mapM.raf);
+  mapM.raf = requestAnimationFrame(syncMapToScroll);
+}, { passive: true });
+
 /* ── picker sheets (Year / Person / Kind) ──────────────────── */
 let currentPicker = null, filterPopOpen = false;
 const pickerSet = k => k === 'year' ? state.years : k === 'person' ? state.people : state.types;
@@ -862,6 +1132,9 @@ function afterRender() {
   }, { rootMargin: '4% 3% -5% 3%' });
   $$('.card').forEach(c => revealIO.observe(c));
 
+  // the map lives outside innerHTML land — (re)mount it when its host
+  // exists, tear it down when the render replaced it with another layout
+  if ($('#podmap')) mountMap(); else unmountMap();
 }
 
 function render({ dir = 0, restoreScroll = true } = {}) {
