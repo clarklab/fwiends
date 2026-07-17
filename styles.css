@@ -393,13 +393,22 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .avatar.stack { margin-left: -8px; box-shadow: 0 0 0 2px var(--card); }
 .avstack { display: flex; padding-left: 8px; }
 
-/* hedcut coins: the stipple portrait on its white paper, in a ring —
-   kept white in dark mode too, like a clipping pinned to the page */
-.avatar.hed { background: #fff; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.1); }
+/* hedcut avatars: no paper, just the stippling printed on whatever
+   surface they sit on — multiply eats the white in light mode, and in
+   dark the plate is inverted and screened so only white ink shows */
+.avatar.hed { background: none; overflow: hidden; }
 .avatar.hed img {
   width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%;
-  display: block; user-select: none; -webkit-user-select: none;
+  display: block; mix-blend-mode: multiply;
+  user-select: none; -webkit-user-select: none;
 }
+@media (prefers-color-scheme: dark) {
+  .avatar.hed img { filter: invert(1); mix-blend-mode: screen; }
+}
+/* faces read better a touch bigger, snugged inside the pill rather
+   than bleeding past its edge like the initials badges do */
+.avatar.hed.xs { width: 28px; height: 28px; }
+.pchip .avatar.xs.hed { margin-left: 0; }
 
 /* ── horizontal timeline mode ── */
 .tl-h .hrail {
