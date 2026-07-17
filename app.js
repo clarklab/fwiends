@@ -71,7 +71,16 @@ const hueOf = name => {
 };
 const initials = name => String(name).split(/\s+/).filter(Boolean)
   .map(w => w[0]).filter((_, i, a) => i === 0 || i === a.length - 1).join('').toUpperCase();
+
+/* hedcut portraits (stipple on white) living in faces/ — to add one,
+   drop in faces/<kebab-case-name>.webp and put the name here */
+const HEDCUTS = new Set(['Melissa Torrey', 'Brandon Strong', 'Tom Ivey']);
+const hedcut = name =>
+  HEDCUTS.has(name) ? `faces/${String(name).toLowerCase().replace(/[^a-z]+/g, '-')}.webp` : null;
+
 const avatar = (name, cls = '') => {
+  const hc = hedcut(name);
+  if (hc) return `<span class="avatar hed ${cls}"><img src="${hc}" alt="" loading="lazy" decoding="async" draggable="false"></span>`;
   const h = hueOf(name);
   return `<span class="avatar ${cls}" style="background:linear-gradient(135deg, hsl(${h} 72% 58%), hsl(${(h + 24) % 360} 72% 42%))">${esc(initials(name))}</span>`;
 };
@@ -962,8 +971,13 @@ function enableSheetDrag(sheet) {
 function eventSheet(id) {
   const e = state.events.find(x => x.id === id);
   if (!e) return;
+  // hedcuts of everyone in the moment, printed into the sheet's corner
+  const faces = [...new Set([e.person, ...e.rel])].map(hedcut).filter(Boolean).slice(0, 3);
   openSheet(`
     <div class="esheet" style="--tc:${typeVar(e.type)}">
+      ${faces.length ? `<div class="hedart" aria-hidden="true">
+        ${faces.map(src => `<img src="${esc(src)}" alt="" decoding="async" draggable="false">`).join('')}
+      </div>` : ''}
       <div class="esheet-top">
         <span class="tbadge big">${typeIcon(e.type)}<span>${esc(e.type)}</span></span>
         ${scopePill(e.scope)}
@@ -1369,7 +1383,10 @@ function slideHTML(s) {
   const ppl = [e.person, ...e.rel].filter(Boolean);
   // each slide's print lands at its own small deterministic tilt
   const tilt = (((presIdx * 41) % 8) - 3.5).toFixed(1);
+  // photo-less slides get a ghosted hedcut of the moment's main face
+  const hed = e.photo ? null : [e.person, ...e.rel].map(hedcut).find(Boolean);
   return `<div class="p-slide ev${e.photo ? ' has-photo' : ''}" style="--tc:${typeVar(e.type)}">
+    ${hed ? `<div class="p-hed" aria-hidden="true"><img src="${esc(hed)}" alt="" decoding="async" draggable="false"></div>` : ''}
     <div class="p-meta">
       <span class="tbadge big">${typeIcon(e.type)}<span>${esc(e.type)}</span></span>
       <span class="p-date">${icon('calendar')}${esc(e.when.label)}</span>
