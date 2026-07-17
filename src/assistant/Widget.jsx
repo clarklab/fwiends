@@ -1,9 +1,13 @@
-/* The Fwiends archivist — a floating assistant built on assistant-ui
-   primitives (AssistantModal / Thread / Composer) with typed answer
-   cards: big year chips, counts with units, hedcut faces for people. */
-import React, { useCallback, useRef, useState } from 'react';
+/* The Fwiends archivist — an assistant built on assistant-ui
+   primitives (Thread / Composer) with typed answer cards: big year
+   chips, counts with units, hedcut faces for people.
+
+   Two layouts, both deterministic (no popper math, nothing can leave
+   the viewport): a fixed corner panel behind a spark bubble on wide
+   screens, and a full non-overlay Chat view opened from its own tab
+   in the bottom nav on phones. */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AssistantModalPrimitive,
   AssistantRuntimeProvider,
   ComposerPrimitive,
   MessagePrimitive,
@@ -12,6 +16,8 @@ import {
   useMessagePartText,
 } from '@assistant-ui/react';
 import { askArchivist, parseCard } from './adapter.js';
+
+const WIDE_MQ = '(min-width: 900px)';
 
 const SparkIcon = props => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -190,21 +196,87 @@ export default function Widget() {
     convertMessage: m => m,
   });
 
+  /* layout mode + open state, shared with the vanilla app via a bridge */
+  const [wide, setWide] = useState(() => matchMedia(WIDE_MQ).matches);
+  const [open, setOpen] = useState(false);
+  const wideRef = useRef(wide);
+  wideRef.current = wide;
+
+  useEffect(() => {
+    const mq = matchMedia(WIDE_MQ);
+    const onChange = () => setWide(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    window.FWIENDS_CHAT = {
+      toggle: () => setOpen(o => !o),
+      close: () => setOpen(false),
+      // only the full-view (phone) layout closes on app navigation
+      closeView: () => { if (!wideRef.current) setOpen(false); },
+    };
+    return () => { delete window.FWIENDS_CHAT; };
+  }, []);
+
+  // the phone layout behaves like a view: chat tab lit, page scroll held
+  const viewMode = open && !wide;
+  useEffect(() => {
+    document.body.classList.toggle('chatting', viewMode);
+    document.getElementById('tab-chat')?.classList.toggle('on', viewMode);
+    return () => {
+      document.body.classList.remove('chatting');
+      document.getElementById('tab-chat')?.classList.remove('on');
+    };
+  }, [viewMode]);
+
+  // Esc closes; on desktop, clicking outside the panel closes too
+  // (except into sheets/photo viewer the chat itself opened)
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = e => { if (e.key === 'Escape') setOpen(false); };
+    const onDown = e => {
+      if (!wideRef.current) return;
+      if (e.target.closest?.('.aiw-panel, .aiw-bubble, #sheet-root, #photo-root, #tab-chat')) return;
+      setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [open]);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <AssistantModalPrimitive.Root>
-        <AssistantModalPrimitive.Anchor className="aiw-anchor">
-          <AssistantModalPrimitive.Trigger className="aiw-bubble" aria-label="Ask about the pod">
-            <SparkIcon className="aiw-bubble-ic" />
-          </AssistantModalPrimitive.Trigger>
-        </AssistantModalPrimitive.Anchor>
-        <AssistantModalPrimitive.Content className="aiw-panel" sideOffset={14} align="end">
+      {wide ? (
+        <button
+          type="button"
+          className="aiw-bubble"
+          data-state={open ? 'open' : 'closed'}
+          aria-label="Ask about the pod"
+          onClick={() => setOpen(o => !o)}
+        >
+          <SparkIcon className="aiw-bubble-ic" />
+        </button>
+      ) : null}
+      {open ? (
+        <div className={viewMode ? 'aiw-panel aiw-viewmode' : 'aiw-panel'} role="dialog" aria-label="Ask the archivist">
           <header className="aiw-head">
             <span className="aiw-head-ic"><SparkIcon /></span>
             <div className="aiw-head-txt">
               <b>Ask the archivist</b>
               <small>Opus 4.8 over the whole pod history</small>
             </div>
+            {wide ? (
+              <button type="button" className="aiw-closebtn" aria-label="Close chat" onClick={() => setOpen(false)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            ) : null}
           </header>
           <ThreadPrimitive.Root className="aiw-thread">
             <ThreadPrimitive.Viewport className="aiw-viewport">
@@ -230,7 +302,7 @@ export default function Widget() {
                 className="aiw-input"
                 placeholder="Ask about the pod…"
                 rows={1}
-                autoFocus
+                autoFocus={wide}
               />
               <ComposerPrimitive.Send className="aiw-send" aria-label="Ask">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
@@ -240,8 +312,8 @@ export default function Widget() {
               </ComposerPrimitive.Send>
             </ComposerPrimitive.Root>
           </ThreadPrimitive.Root>
-        </AssistantModalPrimitive.Content>
-      </AssistantModalPrimitive.Root>
+        </div>
+      ) : null}
     </AssistantRuntimeProvider>
   );
 }

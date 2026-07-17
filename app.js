@@ -1983,6 +1983,7 @@ function goTimeline() {
   state.scroll.timeline = 0;
   closeSheet();
   closeSearch();
+  window.FWIENDS_CHAT?.closeView?.();
   render({ dir, restoreScroll: false });
 }
 
@@ -1992,7 +1993,10 @@ document.addEventListener('click', e => {
   const act = el.dataset.act, v = el.dataset.v;
 
   switch (act) {
+    case 'chat-tab': window.FWIENDS_CHAT?.toggle(); break;
+
     case 'tab': {
+      window.FWIENDS_CHAT?.closeView?.();
       if (v === state.view) { window.scrollTo({ top: 0, behavior: 'smooth' }); break; }
       state.scroll[state.view] = window.scrollY;
       const dir = VIEWS.indexOf(v) - VIEWS.indexOf(state.view);
