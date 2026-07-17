@@ -852,31 +852,38 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
    the plate and screens it, like a white-ink engraving */
 .esheet { position: relative; }
 .esheet > *:not(.hedart) { position: relative; z-index: 1; }
+/* no z-index here — it would isolate the blend group and the white
+   paper would stop multiplying away against the sheet behind it */
 .hedart {
-  position: absolute; top: -8px; right: -6px; z-index: 0;
+  position: absolute; top: -10px; right: -8px;
   display: flex; flex-direction: row-reverse; align-items: flex-start;
   pointer-events: none;
 }
 .hedart img {
-  height: 170px; aspect-ratio: 1122 / 1402; object-fit: cover;
-  mix-blend-mode: multiply; opacity: .92;
-  -webkit-mask-image: radial-gradient(108% 108% at 70% 26%, #000 30%, transparent 70%);
-  mask-image: radial-gradient(108% 108% at 70% 26%, #000 30%, transparent 70%);
+  height: 200px; aspect-ratio: 1122 / 1402; object-fit: cover;
+  mix-blend-mode: multiply; opacity: 1;
+  -webkit-mask-image: radial-gradient(115% 115% at 72% 20%, #000 52%, transparent 86%);
+  mask-image: radial-gradient(115% 115% at 72% 20%, #000 52%, transparent 86%);
+  animation: hedfade .8s ease backwards;
 }
-.hedart img + img { height: 140px; margin-right: -30px; margin-top: 24px; opacity: .62; }
-.hedart img + img + img { height: 118px; margin-top: 44px; opacity: .4; }
+.hedart img + img { height: 168px; margin-right: -34px; margin-top: 30px; opacity: .85; animation-delay: .12s; }
+.hedart img + img + img { height: 140px; margin-top: 52px; opacity: .7; animation-delay: .2s; }
+@keyframes hedfade { from { opacity: 0; } }
+/* the sheet cascade animates transforms, which would isolate the blend
+   mid-entrance — the art fades in on its own instead */
+#sheet-root.open .sheet-body .hedart { animation: none; }
 /* long notes stay clear of the printed corner */
-.esheet:has(.hedart) .esheet-note { padding-right: 118px; }
+.esheet:has(.hedart) .esheet-note { padding-right: 132px; }
 @media (prefers-color-scheme: dark) {
-  .hedart img { filter: invert(1); mix-blend-mode: screen; opacity: .85; }
-  .hedart img + img { opacity: .5; }
-  .hedart img + img + img { opacity: .34; }
+  .hedart img { filter: invert(1); mix-blend-mode: screen; }
+  .hedart img + img { opacity: .8; }
+  .hedart img + img + img { opacity: .65; }
 }
 @media (max-width: 480px) {
-  .hedart img { height: 138px; }
-  .hedart img + img { height: 114px; }
+  .hedart img { height: 158px; }
+  .hedart img + img { height: 132px; }
   .hedart img + img + img { display: none; }
-  .esheet:has(.hedart) .esheet-note { padding-right: 84px; }
+  .esheet:has(.hedart) .esheet-note { padding-right: 100px; }
 }
 .esheet-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .esheet-note { font-size: 19px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.35; margin: 14px 0 16px; }
@@ -1138,25 +1145,29 @@ body.presenting { overflow: hidden; }
     radial-gradient(40% 40% at var(--g2x) 90%, color-mix(in srgb, var(--glow) 55%, transparent), transparent 70%);
 }
 
-/* photo-less slides: a giant ghosted hedcut watches from the right */
+/* photo-less slides: a giant ghosted hedcut watches from the right.
+   No z-index and no transform on this container — either would isolate
+   the blend group and the white paper would stop multiplying away;
+   flex centering + z-index on the text siblings keep it behind. */
 .p-hed {
-  position: absolute; right: -2%; top: 50%; z-index: -1;
-  transform: translateY(-52%);
+  position: absolute; right: -2%; top: 0; bottom: 0;
+  display: flex; align-items: center;
   pointer-events: none;
   animation: p-hedin 1.4s ease .2s backwards;
 }
-@keyframes p-hedin { from { opacity: 0; transform: translateY(-50%); } }
+.p-slide.ev > :not(.p-hed) { position: relative; z-index: 1; }
+@keyframes p-hedin { from { opacity: 0; } }
 .p-hed img {
   height: min(66vh, 600px); aspect-ratio: 1122 / 1402; object-fit: cover;
-  mix-blend-mode: multiply; opacity: .11;
+  mix-blend-mode: multiply; opacity: .15;
   -webkit-mask-image: radial-gradient(115% 115% at 60% 32%, #000 40%, transparent 74%);
   mask-image: radial-gradient(115% 115% at 60% 32%, #000 40%, transparent 74%);
 }
 @media (prefers-color-scheme: dark) {
-  .p-hed img { filter: invert(1); mix-blend-mode: screen; opacity: .14; }
+  .p-hed img { filter: invert(1); mix-blend-mode: screen; opacity: .18; }
 }
 @media (max-width: 760px) {
-  .p-hed { right: -14%; top: 42%; }
+  .p-hed { right: -14%; align-items: flex-start; padding-top: 12vh; }
   .p-hed img { height: min(46vh, 420px); }
 }
 
