@@ -688,7 +688,12 @@ async function geocodeMissing(locs) {
     await new Promise(r => setTimeout(r, 1100)); // Nominatim asks for ≤1 req/s
   }
   geoBusy = false;
-  if (found && mapM.map) { addMapMarkers(); applyStepToMarkers(mapM.idx); focusStep(mapM.idx, true); }
+  if (found && mapM.map) {
+    addMapMarkers();
+    applyStepToMarkers(mapM.idx);
+    if (mapM.viewMode === 'people') { mapM.peopleSig = ''; applyPeople(mapM.idx); focusPeople(true); }
+    else focusStep(mapM.idx, true);
+  }
 }
 
 /* Leaflet, fetched only when the map mode is first opened */
@@ -715,11 +720,15 @@ const tileURL = () =>
   `https://{s}.basemaps.cartocdn.com/${mapScheme.matches ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`;
 mapScheme.addEventListener?.('change', () => mapM.tiles?.setUrl(tileURL()));
 
+const LS_MAPVIEW = 'podtl.mapview';
 const mapM = {
   map: null, L: null, tiles: null, gen: 0,
   steps: [], stepOf: new Map(), dated: [], total: 0,
   markers: new Map(), stepEls: [], shellEl: null,
   idx: -1, raf: 0, pending: null,
+  // People mode: everyone's last-known whereabouts as face pins
+  viewMode: localStorage.getItem(LS_MAPVIEW) === 'people' ? 'people' : 'moments',
+  personTrack: new Map(), people: new Map(), peopleSig: '',
 };
 
 function mapPanelHTML(evs) {
@@ -749,7 +758,21 @@ function mapPanelHTML(evs) {
   }
   const stepOf = new Map();
   steps.forEach((st, i) => st.evs.forEach(e => stepOf.set(e.id, i)));
-  mapM.pending = { steps, stepOf, dated };
+
+  // where each person has been: every located moment they were part of
+  // becomes a stop on their personal trail, in step order
+  const personTrack = new Map();
+  steps.forEach((st, i) => st.evs.forEach(e => {
+    if (!e.loc) return;
+    for (const raw of [e.person, ...e.rel]) {
+      const name = String(raw || '').trim();
+      if (!name) continue;
+      const trail = personTrack.get(name) || personTrack.set(name, []).get(name);
+      const last = trail[trail.length - 1];
+      if (!last || last.loc !== e.loc) trail.push({ step: i, loc: e.loc });
+    }
+  }));
+  mapM.pending = { steps, stepOf, dated, personTrack };
 
   const unplaced = dated.filter(e => !e.loc).length;
   return `
@@ -757,6 +780,10 @@ function mapPanelHTML(evs) {
     <div class="map-shell">
       <div id="podmap" aria-label="Map of the pod’s moments through time"></div>
       <div class="map-hud" aria-live="polite"><b id="map-now"></b><small id="map-count"></small></div>
+      <div class="map-toggle" role="group" aria-label="What the map shows">
+        <button class="mtog${mapM.viewMode === 'moments' ? ' on' : ''}" data-act="map-view" data-v="moments">${icon('spark')}Moments</button>
+        <button class="mtog${mapM.viewMode === 'people' ? ' on' : ''}" data-act="map-view" data-v="people">${icon('users')}People</button>
+      </div>
     </div>
     <div class="map-steps" id="map-steps">
       <p class="map-hint">Scroll to travel through time ${icon('chevdown')}</p>
@@ -792,9 +819,11 @@ async function mountMap() {
   const gen = ++mapM.gen;
   Object.assign(mapM, {
     steps: data.steps, stepOf: data.stepOf, dated: data.dated,
+    personTrack: data.personTrack, people: new Map(), peopleSig: '',
     total: data.dated.length, idx: -1,
     stepEls: $$('#map-steps .mstep'), shellEl: $('.map-shell'),
   });
+  $('#podmap')?.classList.toggle('people-mode', mapM.viewMode === 'people');
   setMapHUD(0); // the HUD reads right even before tiles arrive
 
   let L;
@@ -813,6 +842,8 @@ async function mountMap() {
   mapM.map = map;
   mapM.tiles = L.tileLayer(tileURL(), {
     subdomains: 'abcd', maxZoom: 19,
+    keepBuffer: 4,           // hold on to off-screen tiles for scroll-backs
+    updateWhenIdle: false,   // start fetching mid-flight, not after landing
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }).addTo(map);
   map.setView([39, -95], 4); // placeholder until the first fit
@@ -827,8 +858,9 @@ async function mountMap() {
 function unmountMap() {
   mapM.gen++;
   cancelAnimationFrame(mapM.raf);
+  clearTimeout(prefetchTimer);
   try { mapM.map?.remove(); } catch { /* container may already be gone */ }
-  Object.assign(mapM, { map: null, tiles: null, markers: new Map(), stepEls: [], shellEl: null, idx: -1 });
+  Object.assign(mapM, { map: null, tiles: null, markers: new Map(), people: new Map(), peopleSig: '', stepEls: [], shellEl: null, idx: -1 });
 }
 
 /* several moments in one city fan out on a tiny golden-angle spiral
@@ -871,9 +903,150 @@ function focusStep(idx, instant = false) {
   const pts = [...mapM.markers.values()].filter(r => r.step === idx).map(r => r.m.getLatLng());
   if (!pts.length) return; // a month with no mappable place keeps the current framing
   const b = mapM.L.latLngBounds(pts).pad(0.3);
-  const opts = { maxZoom: 11, paddingTopLeft: [24, 76], paddingBottomRight: [24, 24] };
+  const opts = { maxZoom: 11, paddingTopLeft: [24, 76], paddingBottomRight: [24, 56] };
   if (instant || reducedMotion()) mapM.map.fitBounds(b, { ...opts, animate: false });
   else mapM.map.flyToBounds(b, { ...opts, duration: 0.9 });
+}
+
+/* ── People mode: face pins at everyone's last-known location ──
+   Each person's dot sits wherever their trail last put them as of
+   the month we're in. New people pop in at their first located
+   moment, dots glide when someone moves, anyone in this month's
+   moments gets a pulse, and the camera always pulls back just far
+   enough to hold the whole pod. */
+function applyPeople(idx) {
+  if (!mapM.map) return;
+  const nowPeople = new Set();
+  mapM.steps[idx]?.evs.forEach(e =>
+    [e.person, ...e.rel].forEach(n => { const t = String(n || '').trim(); if (t) nowPeople.add(t); }));
+
+  // everyone's whereabouts as of this step
+  const at = new Map();
+  for (const [name, trail] of mapM.personTrack) {
+    let cur = null;
+    for (const t of trail) { if (t.step > idx) break; cur = t; }
+    if (cur && coordsFor(cur.loc)) at.set(name, cur);
+  }
+
+  // a shared city fans faces out on the same golden-angle spiral
+  const perLoc = new Map();
+  for (const [name, cur] of at) {
+    const k = geoKey(cur.loc);
+    const n = perLoc.get(k) || 0;
+    perLoc.set(k, n + 1);
+    const [lat, lon] = coordsFor(cur.loc);
+    const a = n * 2.39996, r = 0.008 * Math.sqrt(n);
+    const ll = [lat + r * Math.sin(a), lon + r * Math.cos(a)];
+    let rec = mapM.people.get(name);
+    if (!rec) {
+      const marker = mapM.L.marker(ll, {
+        icon: mapM.L.divIcon({
+          className: 'pk', iconSize: [34, 34], iconAnchor: [17, 17],
+          html: `<span class="pkin" style="--pc:hsl(${hueOf(name)} 65% 48%)"><i class="pkring"></i>${avatar(name, 'pkface')}</span>`,
+        }),
+        keyboard: false,
+      }).on('click', () => personSheet(name)).addTo(mapM.map);
+      marker.bindTooltip(name, { direction: 'top', offset: [0, -16] });
+      rec = { m: marker, key: '' };
+      mapM.people.set(name, rec);
+    }
+    const key = `${k}:${n}`;
+    if (rec.key !== key) { rec.m.setLatLng(ll); rec.key = key; }
+    rec.m.getElement()?.classList.toggle('now', nowPeople.has(name));
+    // freshest mover rides on top of the pile
+    rec.m.setZIndexOffset(500 + cur.step * 5 + (nowPeople.has(name) ? 800 : 0));
+  }
+
+  // scrolled back before someone's first located moment — they vanish
+  for (const [name, rec] of mapM.people) {
+    if (!at.has(name)) { rec.m.remove(); mapM.people.delete(name); }
+  }
+}
+
+function focusPeople(instant = false) {
+  if (!mapM.map || !mapM.people.size) return;
+  const sig = [...mapM.people.entries()].map(([n, r]) => `${n}@${r.key}`).sort().join('|');
+  if (sig === mapM.peopleSig && !instant) return; // nobody moved — hold the frame
+  mapM.peopleSig = sig;
+  const b = mapM.L.latLngBounds([...mapM.people.values()].map(r => r.m.getLatLng())).pad(0.28);
+  const opts = { maxZoom: 10, paddingTopLeft: [28, 76], paddingBottomRight: [28, 56] };
+  if (instant || reducedMotion()) mapM.map.fitBounds(b, { ...opts, animate: false });
+  else mapM.map.flyToBounds(b, { ...opts, duration: 0.9 });
+}
+
+/* ── tile prefetch ─────────────────────────────────────────────
+   The itinerary is known in advance, so while a month is being read
+   we quietly warm the browser cache with the tiles the camera will
+   need for the next couple of stops (and one back). URLs replicate
+   Leaflet's own construction — subdomain = abs(x+y) % 4 on wrapped
+   coords — so the cache keys match exactly. */
+const tileWarmed = new Set();
+function prefetchView(b, maxZoom) {
+  const map = mapM.map;
+  if (!map || !b.isValid()) return;
+  const L = mapM.L;
+  const z = Math.min(map.getBoundsZoom(b, false, L.point(56, 132)), maxZoom);
+  const c = map.project(b.getCenter(), z);
+  const size = map.getSize();
+  const style = mapScheme.matches ? 'dark_all' : 'light_all';
+  const r = L.Browser.retina ? '@2x' : '';
+  const wrap = 2 ** z;
+  const x0 = Math.floor((c.x - size.x / 2 - 128) / 256), x1 = Math.floor((c.x + size.x / 2 + 128) / 256);
+  const y0 = Math.max(Math.floor((c.y - size.y / 2 - 128) / 256), 0);
+  const y1 = Math.min(Math.floor((c.y + size.y / 2 + 128) / 256), wrap - 1);
+  for (let x = x0; x <= x1; x++) {
+    const wx = ((x % wrap) + wrap) % wrap;
+    for (let y = y0; y <= y1; y++) {
+      const url = `https://${'abcd'[Math.abs(wx + y) % 4]}.basemaps.cartocdn.com/${style}/${z}/${wx}/${y}${r}.png`;
+      if (tileWarmed.has(url)) continue;
+      tileWarmed.add(url);
+      new Image().src = url;
+    }
+  }
+}
+
+/* where the camera would land for a step, in the current view mode */
+function boundsForStep(idx) {
+  if (idx < 0 || idx >= mapM.steps.length) return null;
+  let pts;
+  if (mapM.viewMode === 'people') {
+    pts = [];
+    for (const trail of mapM.personTrack.values()) {
+      let cur = null;
+      for (const t of trail) { if (t.step > idx) break; cur = t; }
+      const at = cur && coordsFor(cur.loc);
+      if (at) pts.push(at);
+    }
+  } else {
+    pts = mapM.steps[idx].evs.map(e => coordsFor(e.loc)).filter(Boolean);
+  }
+  return pts.length ? mapM.L.latLngBounds(pts).pad(0.3) : null;
+}
+
+let prefetchTimer = null;
+function prefetchAhead(idx) {
+  clearTimeout(prefetchTimer);
+  // wait a beat so the current fly-to's own tiles get the bandwidth first
+  prefetchTimer = setTimeout(() => {
+    if (!mapM.map) return;
+    const maxZoom = mapM.viewMode === 'people' ? 10 : 11;
+    for (const k of [idx + 1, idx + 2, idx - 1]) {
+      const b = boundsForStep(k);
+      if (b) prefetchView(b, maxZoom);
+    }
+  }, 400);
+}
+
+function setMapViewMode(v) {
+  if (v === mapM.viewMode) return;
+  mapM.viewMode = v;
+  localStorage.setItem(LS_MAPVIEW, v);
+  $$('.map-toggle .mtog').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $('#podmap')?.classList.toggle('people-mode', v === 'people');
+  if (!mapM.map || mapM.idx < 0) return;
+  if (v === 'people') { mapM.peopleSig = ''; applyPeople(mapM.idx); focusPeople(); }
+  else focusStep(mapM.idx);
+  prefetchAhead(mapM.idx);
 }
 
 function setMapHUD(idx) {
@@ -893,7 +1066,9 @@ function setStep(idx, instant = false) {
     el.classList.toggle('past', i < idx);
   });
   applyStepToMarkers(idx);
-  focusStep(idx, instant);
+  if (mapM.viewMode === 'people') { applyPeople(idx); focusPeople(instant); }
+  else focusStep(idx, instant);
+  prefetchAhead(idx);
 }
 
 /* the focus line sits just under the pinned map: whichever month's
@@ -2303,6 +2478,7 @@ document.addEventListener('click', e => {
       break;
     }
 
+    case 'map-view': setMapViewMode(v); break;
     case 'gcompare': toggle(state.compare, v); softRender(); break;
     case 'cmp-clear': state.compare.clear(); softRender(); break;
 
