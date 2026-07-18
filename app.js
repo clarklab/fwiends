@@ -842,6 +842,8 @@ async function mountMap() {
   mapM.map = map;
   mapM.tiles = L.tileLayer(tileURL(), {
     subdomains: 'abcd', maxZoom: 19,
+    keepBuffer: 4,           // hold on to off-screen tiles for scroll-backs
+    updateWhenIdle: false,   // start fetching mid-flight, not after landing
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }).addTo(map);
   map.setView([39, -95], 4); // placeholder until the first fit
@@ -856,6 +858,7 @@ async function mountMap() {
 function unmountMap() {
   mapM.gen++;
   cancelAnimationFrame(mapM.raf);
+  clearTimeout(prefetchTimer);
   try { mapM.map?.remove(); } catch { /* container may already be gone */ }
   Object.assign(mapM, { map: null, tiles: null, markers: new Map(), people: new Map(), peopleSig: '', stepEls: [], shellEl: null, idx: -1 });
 }
@@ -971,6 +974,69 @@ function focusPeople(instant = false) {
   else mapM.map.flyToBounds(b, { ...opts, duration: 0.9 });
 }
 
+/* ── tile prefetch ─────────────────────────────────────────────
+   The itinerary is known in advance, so while a month is being read
+   we quietly warm the browser cache with the tiles the camera will
+   need for the next couple of stops (and one back). URLs replicate
+   Leaflet's own construction — subdomain = abs(x+y) % 4 on wrapped
+   coords — so the cache keys match exactly. */
+const tileWarmed = new Set();
+function prefetchView(b, maxZoom) {
+  const map = mapM.map;
+  if (!map || !b.isValid()) return;
+  const L = mapM.L;
+  const z = Math.min(map.getBoundsZoom(b, false, L.point(56, 132)), maxZoom);
+  const c = map.project(b.getCenter(), z);
+  const size = map.getSize();
+  const style = mapScheme.matches ? 'dark_all' : 'light_all';
+  const r = L.Browser.retina ? '@2x' : '';
+  const wrap = 2 ** z;
+  const x0 = Math.floor((c.x - size.x / 2 - 128) / 256), x1 = Math.floor((c.x + size.x / 2 + 128) / 256);
+  const y0 = Math.max(Math.floor((c.y - size.y / 2 - 128) / 256), 0);
+  const y1 = Math.min(Math.floor((c.y + size.y / 2 + 128) / 256), wrap - 1);
+  for (let x = x0; x <= x1; x++) {
+    const wx = ((x % wrap) + wrap) % wrap;
+    for (let y = y0; y <= y1; y++) {
+      const url = `https://${'abcd'[Math.abs(wx + y) % 4]}.basemaps.cartocdn.com/${style}/${z}/${wx}/${y}${r}.png`;
+      if (tileWarmed.has(url)) continue;
+      tileWarmed.add(url);
+      new Image().src = url;
+    }
+  }
+}
+
+/* where the camera would land for a step, in the current view mode */
+function boundsForStep(idx) {
+  if (idx < 0 || idx >= mapM.steps.length) return null;
+  let pts;
+  if (mapM.viewMode === 'people') {
+    pts = [];
+    for (const trail of mapM.personTrack.values()) {
+      let cur = null;
+      for (const t of trail) { if (t.step > idx) break; cur = t; }
+      const at = cur && coordsFor(cur.loc);
+      if (at) pts.push(at);
+    }
+  } else {
+    pts = mapM.steps[idx].evs.map(e => coordsFor(e.loc)).filter(Boolean);
+  }
+  return pts.length ? mapM.L.latLngBounds(pts).pad(0.3) : null;
+}
+
+let prefetchTimer = null;
+function prefetchAhead(idx) {
+  clearTimeout(prefetchTimer);
+  // wait a beat so the current fly-to's own tiles get the bandwidth first
+  prefetchTimer = setTimeout(() => {
+    if (!mapM.map) return;
+    const maxZoom = mapM.viewMode === 'people' ? 10 : 11;
+    for (const k of [idx + 1, idx + 2, idx - 1]) {
+      const b = boundsForStep(k);
+      if (b) prefetchView(b, maxZoom);
+    }
+  }, 400);
+}
+
 function setMapViewMode(v) {
   if (v === mapM.viewMode) return;
   mapM.viewMode = v;
@@ -980,6 +1046,7 @@ function setMapViewMode(v) {
   if (!mapM.map || mapM.idx < 0) return;
   if (v === 'people') { mapM.peopleSig = ''; applyPeople(mapM.idx); focusPeople(); }
   else focusStep(mapM.idx);
+  prefetchAhead(mapM.idx);
 }
 
 function setMapHUD(idx) {
@@ -1001,6 +1068,7 @@ function setStep(idx, instant = false) {
   applyStepToMarkers(idx);
   if (mapM.viewMode === 'people') { applyPeople(idx); focusPeople(instant); }
   else focusStep(idx, instant);
+  prefetchAhead(idx);
 }
 
 /* the focus line sits just under the pinned map: whichever month's
