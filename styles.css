@@ -1483,6 +1483,28 @@ html[data-dir="fade"]::view-transition-old(root) { animation: vt-out-fade .26s e
 }
 .map-hud small { color: var(--ink2); font-size: 11.5px; font-weight: 600; letter-spacing: -0.05px; }
 
+/* moments ↔ people toggle, floating at the map's foot */
+.map-toggle {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 600;
+  display: flex; gap: 2px; padding: 3px;
+  border-radius: 999px;
+  background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: var(--shadow-lift);
+}
+.mtog {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 13px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 650; letter-spacing: -0.1px;
+  color: var(--ink2);
+  transition: background .18s, color .18s, transform .15s var(--pop);
+}
+.mtog .ic { width: 14px; height: 14px; }
+.mtog:active { transform: scale(.94); }
+.mtog.on { background: var(--card); color: var(--tint-ink); box-shadow: var(--shadow); }
+
 /* markers: quiet dots for the past, a pulse for right now */
 .mk { background: none; border: 0; }
 .mk .mkin {
@@ -1511,6 +1533,32 @@ html[data-dir="fade"]::view-transition-old(root) { animation: vt-out-fade .26s e
   0% { transform: scale(.55); opacity: .5; }
   70%, 100% { transform: scale(3); opacity: 0; }
 }
+
+/* person pins (People mode): little faces at last-known locations.
+   The two modes' markers coexist; the container class picks a side. */
+.people-mode .mk { display: none; }
+#podmap:not(.people-mode) .pk { display: none; }
+.pk { background: none; border: 0; }
+.leaflet-marker-pane .pk { transition: transform .9s var(--spring); } /* dots glide on a move */
+.leaflet-zoom-anim .pk { transition: none; } /* but never fight the zoom animation */
+.pkin { position: absolute; inset: 0; display: block; animation: pkpop .5s var(--pop) backwards; }
+@keyframes pkpop { from { transform: scale(0); opacity: 0; } }
+.pkin .avatar.pkface {
+  position: absolute; inset: 0;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+  font-size: 12px; font-weight: 700; color: #fff; letter-spacing: 0;
+  border: 2.5px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+}
+.pkin .avatar.hed.pkface { background: #fff; }
+.pkin .avatar.pkface img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pkring {
+  position: absolute; inset: 0; margin: auto;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--pc); opacity: 0;
+}
+.pk.now .pkring { animation: mkpulse 1.8s ease-out infinite; }
 
 /* the time track scrolling under the pinned map */
 .map-steps {
@@ -1562,6 +1610,7 @@ html[data-dir="fade"]::view-transition-old(root) { animation: vt-out-fade .26s e
 @media (prefers-color-scheme: dark) {
   #podmap { background: #17171a; }
   .mkdot { border-color: #3A3A3C; }
+  .pkin .avatar.pkface { border-color: #3A3A3C; }
 }
 @media (min-width: 900px) {
   .map-shell { height: 52vh; }
